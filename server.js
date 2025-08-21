@@ -14,8 +14,8 @@ const DB_FILE = path.join(__dirname, "db.json");
 
 // =================== CONFIGURAÇÃO PIX ===================
 const chavePix = "61144602351";   // sua chave PIX (celular, email ou aleatória)
-const nomeLoja = "Adega do Zé";   // nome do recebedor
-const cidade = "SAO PAULO";       // cidade obrigatória no payload
+const nomeLoja = "ADEGA DO ANDRE";   // nome do recebedor
+const cidade = "SAMBAIBA";       // cidade obrigatória no payload
 
 // =================== FUNÇÕES AUXILIARES ===================
 function loadDB() {
@@ -158,3 +158,4 @@ app.delete("/api/pedidos/:id", (req, res) => {
 app.listen(PORT, () => {
   console.log(`Servidor rodando em http://localhost:${PORT}`);
 });
+
