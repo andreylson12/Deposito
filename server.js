@@ -13,9 +13,9 @@ app.use(express.static(path.join(__dirname, "public")));
 const DB_FILE = path.join(__dirname, "db.json");
 
 // =================== CONFIGURAÇÃO PIX ===================
-const chavePix = "ANDREYLSONVIRTUAL@GMAIL.COM";   // sua chave PIX (celular, email ou aleatória)
+const chavePix = "Andreylsonvirtual@gmail.com";   // sua chave PIX (celular, email ou aleatória)
 const nomeLoja = "ADEGA DO ANDRE";   // nome do recebedor
-const cidade = "SAMBAIBA";       // cidade obrigatória no payload
+const cidade = "BALSAS";       // cidade obrigatória no payload
 
 // =================== FUNÇÕES AUXILIARES ===================
 function loadDB() {
@@ -158,5 +158,6 @@ app.delete("/api/pedidos/:id", (req, res) => {
 app.listen(PORT, () => {
   console.log(`Servidor rodando em http://localhost:${PORT}`);
 });
+
 
 
