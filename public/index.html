@@ -77,7 +77,7 @@
     // -------- PRODUTOS --------
     async function carregarProdutos(){
       try {
-        const res = await fetch("/api/produtos");
+        const res = await fetch("/api/produtos", { cache: "no-store" });
         const produtos = await res.json();
         const tbody = document.getElementById("listaProdutos");
         tbody.innerHTML = "";
@@ -121,7 +121,7 @@
     // -------- PEDIDOS --------
     async function carregarPedidos(){
       try {
-        const res = await fetch("/api/pedidos");
+        const res = await fetch("/api/pedidos", { cache: "no-store" });
         const pedidos = await res.json();
         const tbody = document.getElementById("listaPedidos");
         tbody.innerHTML = "";
@@ -171,6 +171,9 @@
       mostrarSecao("produtos");
       carregarProdutos();
       carregarPedidos();
+
+      // Atualiza automaticamente a lista de pedidos a cada 5s
+      setInterval(carregarPedidos, 5000);
     });
   </script>
 </body>
