@@ -17,11 +17,17 @@
     #carrinho { background:#fff; padding:15px; border-radius:8px; margin:20px; box-shadow:0 2px 5px rgba(0,0,0,0.2); }
     table { width:100%; border-collapse:collapse; margin-bottom:10px; }
     th, td { padding:8px; border-bottom:1px solid #ddd; text-align:center; }
-    .btn-finalizar { width:100%; padding:12px; background:#e67e22; color:#fff; border:none; border-radius:6px; font-size:16px; cursor:pointer; }
-    .btn-finalizar:hover { background:#d35400; }
+    .btn { padding:5px 10px; border:none; border-radius:4px; cursor:pointer; }
+    .btn-mais { background:#27ae60; color:#fff; }
+    .btn-menos { background:#e67e22; color:#fff; }
+    .btn-remover { background:#e74c3c; color:#fff; }
+    .btn-finalizar { width:100%; padding:12px; background:#2980b9; color:#fff; border:none; border-radius:6px; font-size:16px; cursor:pointer; }
+    .btn-finalizar:hover { background:#1f5f87; }
     #pagamento { text-align:center; margin:20px; display:none; }
     #pagamento img { width:200px; margin:10px auto; display:block; }
     #statusPedido { background:#fff; margin:20px; padding:15px; border-radius:8px; box-shadow:0 2px 5px rgba(0,0,0,0.2); }
+    form#dadosCliente { margin:15px 0; }
+    form#dadosCliente input, form#dadosCliente select { width:100%; padding:8px; margin:5px 0; border:1px solid #ccc; border-radius:6px; }
   </style>
 </head>
 <body>
@@ -37,20 +43,30 @@
       <h2>🛒 Seu Carrinho</h2>
       <table>
         <thead>
-          <tr><th>Produto</th><th>Qtd</th><th>Preço</th><th>Total</th></tr>
+          <tr><th>Produto</th><th>Qtd</th><th>Preço</th><th>Total</th><th>Ações</th></tr>
         </thead>
         <tbody id="itensCarrinho"></tbody>
       </table>
       <h3 id="totalCarrinho">Total: R$ 0,00</h3>
+
+      <form id="dadosCliente">
+        <input type="text" id="nomeCliente" placeholder="Seu Nome" required>
+        <input type="text" id="enderecoCliente" placeholder="Endereço de entrega" required>
+        <select id="pagamentoCliente">
+          <option value="PIX">PIX</option>
+          <option value="Dinheiro">Dinheiro</option>
+        </select>
+      </form>
+
       <button class="btn-finalizar" onclick="finalizarPedido()">Finalizar Pedido</button>
     </section>
 
     <section id="pagamento">
       <h2>💳 Pagamento via PIX</h2>
-      <img src="qrcode_pix.png" alt="QR Code PIX">
+      <img id="pixQr" alt="QR Code PIX">
       <p>Sua chave PIX:</p>
-      <p><b>61144602351</b></p>
-      <p>Copie e pague via seu banco.</p>
+      <input type="text" id="pixCodigo" readonly style="width:90%;padding:8px;">
+      <button class="btn" onclick="copiarPix()">📋 Copiar Código</button>
     </section>
 
     <section id="statusPedido">
@@ -61,111 +77,6 @@
     </section>
   </main>
 
-  <script>
-    let carrinho = [];
-
-    function moeda(n){ return Number(n).toFixed(2).replace('.', ','); }
-
-    async function carregarProdutos(){
-      try {
-        const res = await fetch("/api/produtos");
-        const produtos = await res.json();
-        const container = document.getElementById("listaProdutos");
-        container.innerHTML = "";
-        produtos.filter(p=>p.estoque>0).forEach(p=>{
-          const div = document.createElement("div");
-          div.className = "card";
-          div.innerHTML = `
-            <img src="${p.imagem}" alt="${p.nome}">
-            <h3>${p.nome}</h3>
-            <p>R$ ${moeda(p.preco)}</p>
-            <p>Estoque: ${p.estoque}</p>
-            <button onclick="adicionarCarrinho(${p.id}, '${p.nome}', ${p.preco})">Adicionar</button>
-          `;
-          container.appendChild(div);
-        });
-      } catch (err) {
-        console.error("Erro ao carregar produtos:", err);
-      }
-    }
-
-    function adicionarCarrinho(id, nome, preco){
-      const item = carrinho.find(i=>i.id===id);
-      if(item){
-        item.quantidade++;
-      } else {
-        carrinho.push({id, nome, preco, quantidade:1});
-      }
-      renderCarrinho();
-    }
-
-    function renderCarrinho(){
-      const tbody = document.getElementById("itensCarrinho");
-      tbody.innerHTML = "";
-      let total = 0;
-      carrinho.forEach(i=>{
-        const subtotal = i.preco * i.quantidade;
-        total += subtotal;
-        const tr = document.createElement("tr");
-        tr.innerHTML = `
-          <td>${i.nome}</td>
-          <td>${i.quantidade}</td>
-          <td>R$ ${moeda(i.preco)}</td>
-          <td>R$ ${moeda(subtotal)}</td>
-        `;
-        tbody.appendChild(tr);
-      });
-      document.getElementById("totalCarrinho").textContent = "Total: R$ " + moeda(total);
-    }
-
-    async function finalizarPedido(){
-      if(carrinho.length===0){ return alert("Carrinho vazio!"); }
-      const total = carrinho.reduce((s,i)=>s+i.preco*i.quantidade,0);
-      const pedido = {
-        itens: carrinho,
-        total,
-        pagamento: "PIX"
-      };
-      try {
-        const res = await fetch("/api/pedidos", {
-          method:"POST",
-          headers:{"Content-Type":"application/json"},
-          body:JSON.stringify(pedido)
-        });
-        if(res.ok){
-          const salvo = await res.json();
-          alert("Pedido realizado com sucesso! ID do pedido: " + salvo.id);
-          carrinho = [];
-          renderCarrinho();
-          document.getElementById("pagamento").style.display = "block";
-        } else {
-          alert("Erro ao enviar pedido");
-        }
-      } catch (err) {
-        console.error("Erro ao finalizar pedido:", err);
-        alert("Falha na conexão com o servidor.");
-      }
-    }
-
-    async function consultarStatus(){
-      const id = document.getElementById("pedidoIdInput").value;
-      if(!id) return alert("Informe o ID do pedido");
-      try {
-        const res = await fetch("/api/pedidos/"+id);
-        if(res.ok){
-          const pedido = await res.json();
-          document.getElementById("resultadoStatus").textContent =
-            "Status: " + pedido.status + " | Total: R$ " + moeda(pedido.total);
-        } else {
-          document.getElementById("resultadoStatus").textContent = "Pedido não encontrado.";
-        }
-      } catch (err) {
-        console.error("Erro ao consultar status:", err);
-        document.getElementById("resultadoStatus").textContent = "Erro na consulta.";
-      }
-    }
-
-    document.addEventListener("DOMContentLoaded", carregarProdutos);
-  </script>
+  <script src="delivery.js"></script>
 </body>
 </html>
