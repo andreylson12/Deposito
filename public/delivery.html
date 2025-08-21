@@ -20,9 +20,10 @@
     .btn-finalizar { width:100%; padding:12px; background:#3498db; color:#fff; border:none; border-radius:6px; font-size:16px; cursor:pointer; }
     .btn-finalizar:hover { background:#2980b9; }
     #pagamento { text-align:center; margin:20px; display:none; }
-    #pagamento img { width:200px; margin:10px auto; display:block; }
+    #pagamento img { width:220px; margin:10px auto; display:block; }
     #statusPedido { background:#fff; margin:20px; padding:15px; border-radius:8px; box-shadow:0 2px 5px rgba(0,0,0,0.2); }
     input, select { width:100%; padding:10px; margin:5px 0; border:1px solid #ccc; border-radius:5px; }
+    #pixPayload { font-size:14px; background:#f0f0f0; padding:10px; border-radius:5px; word-break:break-all; }
   </style>
 </head>
 <body>
@@ -61,10 +62,9 @@
     <!-- PAGAMENTO PIX -->
     <section id="pagamento">
       <h2>💳 Pagamento via PIX</h2>
-      <img src="qrcode_pix.png" alt="QR Code PIX">
-      <p>Sua chave PIX:</p>
-      <p><b>61144602351</b></p>
-      <p>Copie e pague via seu banco.</p>
+      <img id="pixQrCode" src="" alt="QR Code PIX">
+      <p>Copia e Cola PIX:</p>
+      <p id="pixPayload"></p>
     </section>
 
     <!-- CONSULTAR STATUS -->
@@ -163,8 +163,12 @@
           alert("Pedido realizado com sucesso! ID do pedido: " + salvo.id);
           carrinho = [];
           renderCarrinho();
-          if(pagamento === "PIX"){
+
+          // Se for PIX, mostra o QR e copia e cola
+          if(salvo.pix){
             document.getElementById("pagamento").style.display = "block";
+            document.getElementById("pixQrCode").src = salvo.pix.qrCodeImage;
+            document.getElementById("pixPayload").textContent = salvo.pix.payload;
           }
         } else {
           alert("Erro ao enviar pedido");
