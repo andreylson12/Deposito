@@ -1,6 +1,9 @@
 const express = require("express");
 const fs = require("fs");
 const path = require("path");
+const QRCode = require("qrcode");
+const { QrCodePix } = require("qrcode-pix");
+
 const app = express();
 const PORT = process.env.PORT || 3000;
 
@@ -9,7 +12,12 @@ app.use(express.static(path.join(__dirname, "public")));
 
 const DB_FILE = path.join(__dirname, "db.json");
 
-// Funções auxiliares
+// =================== CONFIGURAÇÃO PIX ===================
+const chavePix = "61144602351";   // sua chave PIX (celular, email ou aleatória)
+const nomeLoja = "Adega do Zé";   // nome do recebedor
+const cidade = "SAO PAULO";       // cidade obrigatória no payload
+
+// =================== FUNÇÕES AUXILIARES ===================
 function loadDB() {
   if (!fs.existsSync(DB_FILE)) {
     fs.writeFileSync(DB_FILE, JSON.stringify({ produtos: [], pedidos: [] }, null, 2));
@@ -36,7 +44,6 @@ app.post("/api/produtos", (req, res) => {
   res.json(novo);
 });
 
-// Deletar produto
 app.delete("/api/produtos/:id", (req, res) => {
   const db = loadDB();
   const id = parseInt(req.params.id);
@@ -45,14 +52,37 @@ app.delete("/api/produtos/:id", (req, res) => {
   res.json({ success: true });
 });
 
+// =================== ROTAS PIX ===================
+app.get("/api/pix/:valor/:txid?", async (req, res) => {
+  try {
+    const valor = parseFloat(req.params.valor);
+    const txid = req.params.txid || "ADEGA" + Date.now();
+
+    const qrCodePix = QrCodePix({
+      version: "01",
+      key: chavePix,
+      name: nomeLoja,
+      city: cidade,
+      transactionId: txid,
+      value: valor
+    });
+
+    const payload = qrCodePix.payload();
+    const qrCodeImage = await qrCodePix.base64();
+
+    res.json({ payload, qrCodeImage, txid });
+  } catch (err) {
+    console.error("Erro ao gerar PIX:", err);
+    res.status(500).json({ error: "Falha ao gerar QR Code PIX" });
+  }
+});
+
 // =================== ROTAS PEDIDOS ===================
-// Listar todos
 app.get("/api/pedidos", (req, res) => {
   const db = loadDB();
   res.json(db.pedidos);
 });
 
-// Consultar por ID
 app.get("/api/pedidos/:id", (req, res) => {
   const db = loadDB();
   const id = parseInt(req.params.id);
@@ -63,8 +93,7 @@ app.get("/api/pedidos/:id", (req, res) => {
   res.json(pedido);
 });
 
-// Criar pedido
-app.post("/api/pedidos", (req, res) => {
+app.post("/api/pedidos", async (req, res) => {
   const db = loadDB();
   const pedido = req.body;
   pedido.id = Date.now();
@@ -79,12 +108,32 @@ app.post("/api/pedidos", (req, res) => {
     }
   });
 
+  // Gera PIX junto com o pedido
+  try {
+    const qrCodePix = QrCodePix({
+      version: "01",
+      key: chavePix,
+      name: nomeLoja,
+      city: cidade,
+      transactionId: "PED" + pedido.id,
+      value: pedido.total
+    });
+
+    pedido.pix = {
+      payload: qrCodePix.payload(),
+      qrCodeImage: await qrCodePix.base64(),
+      txid: "PED" + pedido.id
+    };
+  } catch (err) {
+    console.error("Erro ao gerar PIX:", err);
+    pedido.pix = null;
+  }
+
   db.pedidos.push(pedido);
   saveDB(db);
   res.json(pedido);
 });
 
-// Atualizar status
 app.put("/api/pedidos/:id/status", (req, res) => {
   const db = loadDB();
   const id = parseInt(req.params.id);
@@ -97,7 +146,6 @@ app.put("/api/pedidos/:id/status", (req, res) => {
   res.json(pedido);
 });
 
-// Deletar pedido
 app.delete("/api/pedidos/:id", (req, res) => {
   const db = loadDB();
   const id = parseInt(req.params.id);
