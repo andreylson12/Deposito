@@ -55,6 +55,7 @@
     </section>
   </div>
 
+  <!-- som do alerta; coloque /public/som_alerta.mp3. Se não existir, usaremos fallback -->
   <audio id="alertSound" src="/som_alerta.mp3" preload="auto"></audio>
 
   <script>
@@ -70,40 +71,40 @@
     const alertEl = document.getElementById("alertSound");
     let pedidosConhecidos = new Set();  // ids já vistos (evita alarme na 1ª carga)
 
-    // Desbloqueia áudio no mobile no 1º gesto do usuário
+    // fallback de som caso /som_alerta.mp3 não exista
+    (function garantirSom(){
+      const fallbackBeep = "data:audio/wav;base64,UklGRiQAAABXQVZFZm10IBAAAAABAAEAESsAACJWAAACABYAAAABAAACAAA=";
+      fetch("/som_alerta.mp3", { method: "HEAD", cache: "no-store" })
+        .then(r => { if (!r.ok) alertEl.src = fallbackBeep; })
+        .catch(() => { alertEl.src = fallbackBeep; });
+    })();
+
+    // Desbloqueia áudio no mobile no 1º gesto
     (function desbloquearAudioUmaVez(){
-      const tryUnlock = async () => {
-        try { await alertEl.play(); alertEl.pause(); } catch {}
-      };
+      const tryUnlock = async () => { try { await alertEl.play(); alertEl.pause(); } catch {} };
       window.addEventListener("touchstart", tryUnlock, { once:true });
       window.addEventListener("click",      tryUnlock, { once:true });
     })();
 
     async function tocarAlerta(){
       if (!alertEl) return;
-      try {
-        alertEl.currentTime = 0;
-        await alertEl.play();
-      } catch (e) {
-        console.warn("Som bloqueado (autoplay). Toque uma vez na tela para habilitar.");
-      }
+      try { alertEl.currentTime = 0; await alertEl.play(); }
+      catch { console.warn("Som bloqueado (autoplay). Toque uma vez na tela para habilitar."); }
     }
 
-    function pedirPermissaoNotificacao(){
-      if (!("Notification" in window)) return;
-      if (Notification.permission === "default") {
+    // Notificações nativas
+    (function pedirPermissaoNotificacao(){
+      if ("Notification" in window && Notification.permission === "default") {
         Notification.requestPermission().catch(()=>{});
       }
-    }
-    pedirPermissaoNotificacao();
+    })();
 
-    function notificarBanner(pedido){
-      if (!("Notification" in window)) return;
-      if (Notification.permission !== "granted") return;
+    function notificarBanner(p){
+      if (!("Notification" in window) || Notification.permission !== "granted") return;
       new Notification("Novo pedido!", {
-        body: `#${pedido.id} de ${pedido.cliente?.nome || "Cliente"} · Total R$ ${Number(pedido.total).toFixed(2).replace('.', ',')}`,
-        tag: `pedido-${pedido.id}`,
-        icon: "/icone_pedido.png" // opcional: coloque em /public
+        body: `#${p.id} · ${p.cliente?.nome || "Cliente"} · R$ ${Number(p.total).toFixed(2).replace('.', ',')}`,
+        tag: `pedido-${p.id}`,
+        icon: "/icone_pedido.png" // opcional (coloque em /public)
       });
     }
     function vibrarCurto(){ if (navigator.vibrate) navigator.vibrate(200); }
@@ -128,7 +129,7 @@
         });
       }catch(e){
         console.error(e);
-        alert("Erro ao carregar produtos.");
+        // mantém a tela sem popup
       }
     }
 
@@ -157,11 +158,14 @@
     });
 
     // -------- PEDIDOS --------
+    let falhasSeguidas = 0;
+
     async function carregarPedidos(){
       try{
         const res = await fetch(API.pedidos, { cache:"no-store" });
-        if(!res.ok) throw new Error("Falha ao carregar pedidos");
+        if(!res.ok) throw new Error("HTTP " + res.status);
         const pedidos = await res.json();
+
         const tbody = document.getElementById("listaPedidos");
         tbody.innerHTML = "";
 
@@ -173,9 +177,9 @@
           pedidos.forEach(p => {
             if (!pedidosConhecidos.has(p.id)) {
               pedidosConhecidos.add(p.id);
-              tocarAlerta();       // som
-              notificarBanner(p);  // banner
-              vibrarCurto();       // vibra
+              tocarAlerta();
+              notificarBanner(p);
+              vibrarCurto();
             }
           });
         }
@@ -201,9 +205,13 @@
             <td><button class="btn-remover" onclick="removerPedido(${p.id})">Excluir</button></td>`;
           tbody.appendChild(tr);
         });
+
+        falhasSeguidas = 0; // OK
       }catch(e){
-        console.error(e);
-        alert("Erro ao carregar pedidos.");
+        console.warn("Falha ao carregar pedidos:", e);
+        falhasSeguidas++;
+        const espera = Math.min(15000, 2000 * falhasSeguidas); // 2s -> 15s
+        setTimeout(carregarPedidos, espera);
       }
     }
 
