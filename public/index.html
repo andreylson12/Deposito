@@ -55,11 +55,11 @@
     </section>
   </div>
 
-  <!-- mantém o mesmo id e caminho do seu projeto -->
   <audio id="alertSound" src="/som_alerta.mp3" preload="auto"></audio>
 
   <script>
     const API = { produtos: "/api/produtos", pedidos: "/api/pedidos" };
+
     function mostrarSecao(id){
       document.querySelectorAll("section").forEach(s=>s.classList.remove("active"));
       document.getElementById(id).classList.add("active");
@@ -68,20 +68,17 @@
 
     // ====== SOM DE ALERTA (mínimo de mudanças) ======
     const alertEl = document.getElementById("alertSound");
-    let audioDesbloqueado = false;      // fica true após 1 toque/click
     let pedidosConhecidos = new Set();  // ids já vistos (evita alarme na 1ª carga)
 
-    // 1º gesto do usuário desbloqueia o áudio (mobile)
-    window.addEventListener("touchstart", () => { audioDesbloqueado = true; }, { once:true });
-    window.addEventListener("click",      () => { audioDesbloqueado = true; }, { once:true });
+    // 1º gesto do usuário ajuda a destravar áudio no mobile
+    window.addEventListener("touchstart", () => {}, { once:true });
+    window.addEventListener("click",      () => {}, { once:true });
 
     async function tocarAlerta(){
       if (!alertEl) return;
       try {
-        // alguns navegadores exigem gesto do usuário primeiro; se ainda não houve, tentamos mesmo assim
         await alertEl.play();
       } catch (e) {
-        // se falhar, próxima interação do usuário destrava (já tratamos acima)
         console.warn("Som bloqueado (autoplay). Toque uma vez na tela para habilitar.");
       }
     }
@@ -89,26 +86,34 @@
 
     // -------- PRODUTOS --------
     async function carregarProdutos(){
-      const res = await fetch(API.produtos, { cache:"no-store" });
-      const produtos = await res.json();
-      const tbody = document.getElementById("listaProdutos");
-      tbody.innerHTML = "";
-      produtos.forEach(p=>{
-        const tr = document.createElement("tr");
-        tr.innerHTML = `
-          <td>${p.nome}</td>
-          <td>R$ ${moeda(p.preco)}</td>
-          <td>${p.estoque}</td>
-          <td><button class="btn-remover" onclick="removerProduto(${p.id})">Excluir</button></td>`;
-        tbody.appendChild(tr);
-      });
+      try{
+        const res = await fetch(API.produtos, { cache:"no-store" });
+        if(!res.ok) throw new Error("Falha ao carregar produtos");
+        const produtos = await res.json();
+        const tbody = document.getElementById("listaProdutos");
+        tbody.innerHTML = "";
+        produtos.forEach(p=>{
+          const tr = document.createElement("tr");
+          tr.innerHTML = `
+            <td>${p.nome}</td>
+            <td>R$ ${moeda(p.preco)}</td>
+            <td>${p.estoque}</td>
+            <td><button class="btn-remover" onclick="removerProduto(${p.id})">Excluir</button></td>`;
+          tbody.appendChild(tr);
+        });
+      }catch(e){
+        console.error(e);
+        alert("Erro ao carregar produtos.");
+      }
     }
+
     async function removerProduto(id){
       if(confirm("Excluir?")){
-        await fetch(\`\${API.produtos}/\${id}\`,{method:"DELETE"});
+        await fetch(`${API.produtos}/${id}`,{method:"DELETE"});
         carregarProdutos();
       }
     }
+
     document.getElementById("formProdutos").addEventListener("submit", async e=>{
       e.preventDefault();
       const novo = {
@@ -128,58 +133,65 @@
 
     // -------- PEDIDOS --------
     async function carregarPedidos(){
-      const res = await fetch(API.pedidos, { cache:"no-store" });
-      const pedidos = await res.json();
-      const tbody = document.getElementById("listaPedidos");
-      tbody.innerHTML = "";
+      try{
+        const res = await fetch(API.pedidos, { cache:"no-store" });
+        if(!res.ok) throw new Error("Falha ao carregar pedidos");
+        const pedidos = await res.json();
+        const tbody = document.getElementById("listaPedidos");
+        tbody.innerHTML = "";
 
-      // 1ª carga: registra ids e NÃO toca som
-      if (pedidosConhecidos.size === 0) {
-        pedidos.forEach(p => pedidosConhecidos.add(p.id));
-      } else {
-        // cargas seguintes: alarme somente para ids ainda não vistos
-        pedidos.forEach(p => {
-          if (!pedidosConhecidos.has(p.id)) {
-            pedidosConhecidos.add(p.id);
-            tocarAlerta(); // 🔔 toca aqui para pedido novo
-          }
+        // 1ª carga: registra ids e NÃO toca som
+        if (pedidosConhecidos.size === 0) {
+          pedidos.forEach(p => pedidosConhecidos.add(p.id));
+        } else {
+          // cargas seguintes: alarme somente para ids ainda não vistos
+          pedidos.forEach(p => {
+            if (!pedidosConhecidos.has(p.id)) {
+              pedidosConhecidos.add(p.id);
+              tocarAlerta(); // 🔔 toca aqui para pedido novo
+            }
+          });
+        }
+
+        pedidos.forEach(p=>{
+          const itens = (p.itens || []).map(i => `${i.nome} x${i.quantidade}`).join(", ");
+          const tr = document.createElement("tr");
+          tr.innerHTML = `
+            <td>${p.id}</td>
+            <td>${p.cliente?.nome || "-"}</td>
+            <td>${p.cliente?.endereco || "-"}</td>
+            <td>${itens}</td>
+            <td>R$ ${moeda(p.total)}</td>
+            <td>${p.pix ? "PIX" : "Outro"}</td>
+            <td>
+              <select onchange="atualizarStatus(${p.id}, this.value)">
+                <option ${p.status==="Pendente"?"selected":""}>Pendente</option>
+                <option ${p.status==="Preparando"?"selected":""}>Preparando</option>
+                <option ${p.status==="Saiu para entrega"?"selected":""}>Saiu para entrega</option>
+                <option ${p.status==="Concluído"?"selected":""}>Concluído</option>
+              </select>
+            </td>
+            <td><button class="btn-remover" onclick="removerPedido(${p.id})">Excluir</button></td>`;
+          tbody.appendChild(tr);
         });
+      }catch(e){
+        console.error(e);
+        alert("Erro ao carregar pedidos.");
       }
-
-      pedidos.forEach(p=>{
-        const itens = (p.itens||[]).map(i=>\`\${i.nome} x\${i.quantidade}\`).join(", ");
-        const tr = document.createElement("tr");
-        tr.innerHTML = `
-          <td>${p.id}</td>
-          <td>${p.cliente?.nome||"-"}</td>
-          <td>${p.cliente?.endereco||"-"}</td>
-          <td>${itens}</td>
-          <td>R$ ${moeda(p.total)}</td>
-          <td>${p.pix?"PIX":"Outro"}</td>
-          <td>
-            <select onchange="atualizarStatus(${p.id}, this.value)">
-              <option ${p.status==="Pendente"?"selected":""}>Pendente</option>
-              <option ${p.status==="Preparando"?"selected":""}>Preparando</option>
-              <option ${p.status==="Saiu para entrega"?"selected":""}>Saiu para entrega</option>
-              <option ${p.status==="Concluído"?"selected":""}>Concluído</option>
-            </select>
-          </td>
-          <td><button class="btn-remover" onclick="removerPedido(${p.id})">Excluir</button></td>`;
-        tbody.appendChild(tr);
-      });
     }
 
     async function atualizarStatus(id, status){
-      await fetch(\`\${API.pedidos}/\${id}/status\`, {
+      await fetch(`${API.pedidos}/\${id}/status`.replace("\${id}", id), {
         method:"PUT",
         headers:{ "Content-Type":"application/json" },
         body: JSON.stringify({ status })
       });
       carregarPedidos();
     }
+
     async function removerPedido(id){
       if(confirm("Excluir pedido?")){
-        await fetch(\`\${API.pedidos}/\${id}\`, { method:"DELETE" });
+        await fetch(`${API.pedidos}/\${id}`.replace("\${id}", id), { method:"DELETE" });
         carregarPedidos();
       }
     }
