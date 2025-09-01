@@ -58,7 +58,14 @@
       <table>
         <thead>
           <tr>
-            <th>ID</th><th>Itens</th><th>Total</th><th>Pagamento</th><th>Status</th><th>Ações</th>
+            <th>ID</th>
+            <th>Cliente</th>
+            <th>Endereço</th>
+            <th>Itens</th>
+            <th>Total</th>
+            <th>Pagamento</th>
+            <th>Status</th>
+            <th>Ações</th>
           </tr>
         </thead>
         <tbody id="listaPedidos"></tbody>
@@ -125,16 +132,17 @@
         const pedidos = await res.json();
         const tbody = document.getElementById("listaPedidos");
         tbody.innerHTML = "";
-        pedidos.forEach(p=>{
+        
+        pedidos.forEach(p => {
           const itensTxt = p.itens.map(i => `${i.nome} x${i.quantidade}`).join(", ");
           const tr = document.createElement("tr");
           tr.innerHTML = `
             <td>${p.id}</td>
+            <td>${p.cliente?.nome || "-"}</td>
+            <td>${p.cliente?.endereco || "-"}</td>
             <td>${itensTxt}</td>
             <td>R$ ${moeda(p.total)}</td>
-            <td>
-              ${p.pix ? `<span class="badge">PIX disponível</span>` : `<span class="badge">Sem PIX</span>`}
-            </td>
+            <td>${p.pix ? `<span class="badge">PIX disponível</span>` : `<span class="badge">Sem PIX</span>`}</td>
             <td>
               <select onchange="atualizarStatus(${p.id}, this.value)">
                 <option ${p.status==="Pendente"?"selected":""}>Pendente</option>
@@ -143,7 +151,9 @@
                 <option ${p.status==="Concluído"?"selected":""}>Concluído</option>
               </select>
             </td>
-            <td><button class="btn-remover" onclick="removerPedido(${p.id})">Excluir</button></td>
+            <td>
+              <button class="btn-remover" onclick="removerPedido(${p.id})">Excluir</button>
+            </td>
           `;
           tbody.appendChild(tr);
         });
