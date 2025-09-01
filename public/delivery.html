@@ -24,6 +24,8 @@
     #statusPedido { background:#fff; margin:20px; padding:15px; border-radius:8px; box-shadow:0 2px 5px rgba(0,0,0,0.2); }
     input, select { width:100%; padding:10px; margin:5px 0; border:1px solid #ccc; border-radius:5px; }
     #pixPayload { font-size:14px; background:#f0f0f0; padding:10px; border-radius:5px; word-break:break-all; }
+    #btnCopiar { margin-top:10px; padding:8px 12px; background:#27ae60; color:#fff; border:none; border-radius:5px; cursor:pointer; }
+    #btnCopiar:hover { background:#219150; }
   </style>
 </head>
 <body>
@@ -67,6 +69,7 @@
       <p>Chave PIX (telefone): <strong id="pixChave">99 991842200</strong></p>
       <p>Copia e Cola PIX:</p>
       <p id="pixPayload">99 991842200</p>
+      <button id="btnCopiar" onclick="copiarPix()">📋 Copiar Código PIX</button>
     </section>
 
     <!-- CONSULTAR STATUS -->
@@ -164,6 +167,16 @@
 
     function consultarStatus(){
       alert("Funcionalidade de status desativada nesta versão simplificada.");
+    }
+
+    // Função copiar PIX
+    function copiarPix(){
+      const texto = document.getElementById("pixPayload").textContent;
+      navigator.clipboard.writeText(texto).then(()=>{
+        alert("Código PIX copiado!");
+      }).catch(err=>{
+        console.error("Erro ao copiar:", err);
+      });
     }
 
     document.addEventListener("DOMContentLoaded", carregarProdutos);
