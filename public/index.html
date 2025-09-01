@@ -1,198 +1,118 @@
-// server.js – estável para Railway
-const express = require("express");
-const fs = require("fs");
-const path = require("path");
-const { QrCodePix } = require("qrcode-pix");
-const cors = require("cors");
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8" />
+  <title>Painel - Adega Sistema</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <style>
+    body { margin:0; font-family:Arial, sans-serif; display:flex; height:100vh; background:#1c1c1c; color:#fff; }
+    .sidebar{ width:220px; background:#111; padding:20px; }
+    .sidebar a{ display:block; margin:10px 0; padding:8px; border-radius:4px; text-decoration:none; color:#fff; cursor:pointer; }
+    .sidebar a:hover{ background:#333; }
+    .content{ flex:1; padding:20px; overflow-y:auto; }
+    section{ display:none; }
+    section.active{ display:block; }
+    table{ border-collapse:collapse; width:100%; background:#2c3e50; }
+    th, td{ padding:8px; border:1px solid #444; vertical-align: top; text-align:center; }
+    input, button, select{ padding:8px; margin:5px 0; border-radius:6px; border:none; }
+    button{ background:#27ae60; color:#fff; cursor:pointer; }
+    button:hover{ background:#219150; }
+    .btn-remover{ background:#e74c3c; }
+  </style>
+</head>
+<body>
+  <div class="sidebar">
+    <h2>Adega</h2>
+    <a onclick="mostrarSecao('produtos')">🏷️ Produtos</a>
+    <a onclick="mostrarSecao('pedidos')">🚚 Pedidos</a>
+  </div>
 
-const app = express();
-const PORT = process.env.PORT || 3000;
+  <div class="content">
+    <h1>Painel Administrativo</h1>
+    <p>Gerencie seus produtos e pedidos.</p>
 
-// ---------- Middlewares ----------
-app.use(express.json());
+    <section id="produtos" class="active">
+      <h2>🏷️ Produtos</h2>
+      <form id="formProdutos">
+        <input id="nomeProduto" placeholder="Nome" required />
+        <input id="precoProduto" type="number" step="0.01" placeholder="Preço" required />
+        <input id="estoqueProduto" type="number" placeholder="Estoque" required />
+        <input id="imagemProduto" placeholder="URL da Imagem" />
+        <button type="submit">Salvar</button>
+      </form>
+      <table><thead><tr><th>Nome</th><th>Preço</th><th>Estoque</th><th>Ações</th></tr></thead>
+      <tbody id="listaProdutos"></tbody></table>
+    </section>
 
-// (Opcional) CSP — mantenha comentada enquanto testa
-// app.use((req, res, next) => {
-//   res.setHeader(
-//     "Content-Security-Policy",
-//     [
-//       "default-src 'self'",
-//       "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com https://www.gstatic.com",
-//       "script-src 'self' 'unsafe-inline' https://translate.googleapis.com https://translate.google.com https://www.gstatic.com",
-//       "img-src 'self' data: https://*.gstatic.com https://*.google.com",
-//       "frame-src 'self' https://translate.google.com",
-//       "connect-src 'self'"
-//     ].join("; ")
-//   );
-//   next();
-// });
+    <section id="pedidos">
+      <h2>🚚 Pedidos</h2>
+      <table>
+        <thead><tr><th>ID</th><th>Cliente</th><th>Endereço</th><th>Itens</th><th>Total</th><th>Pagamento</th><th>Status</th><th>Ações</th></tr></thead>
+        <tbody id="listaPedidos"></tbody>
+      </table>
+    </section>
+  </div>
 
-// arquivos estáticos
-app.use(express.static(path.join(__dirname, "public")));
+  <audio id="alertSound" src="/som_alerta.mp3" preload="auto"></audio>
 
-app.use(
-  cors({
-    origin: true,
-    methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
-    credentials: true,
-  })
-);
+  <script>
+    const API = { produtos: "/api/produtos", pedidos: "/api/pedidos" };
+    function mostrarSecao(id){ document.querySelectorAll("section").forEach(s=>s.classList.remove("active")); document.getElementById(id).classList.add("active"); }
+    const moeda = n => Number(n).toFixed(2).replace('.', ',');
 
-// Healthcheck
-app.get("/health", (_req, res) => res.json({ ok: true }));
-
-// ---------- "Banco" em arquivo ----------
-const DB_FILE = path.join(__dirname, "db.json");
-function loadDB() {
-  if (!fs.existsSync(DB_FILE)) {
-    fs.writeFileSync(DB_FILE, JSON.stringify({ produtos: [], pedidos: [] }, null, 2));
-  }
-  return JSON.parse(fs.readFileSync(DB_FILE));
-}
-function saveDB(db) {
-  fs.writeFileSync(DB_FILE, JSON.stringify(db, null, 2));
-}
-
-// ---------- PIX ----------
-const chavePix = "99 991842200";
-const nomeLoja = "ANDREYLSON SODRE";
-const cidade = "SAMBAIBA";
-
-// ---------- Rotas ----------
-app.get("/api/chave-pix", (_req, res) => {
-  res.json({ chave: chavePix, nome: nomeLoja, cidade });
-});
-
-// Produtos
-app.get("/api/produtos", (_req, res) => {
-  const db = loadDB();
-  res.json(db.produtos);
-});
-
-app.post("/api/produtos", (req, res) => {
-  const db = loadDB();
-  const novo = { ...req.body, id: Date.now() };
-  db.produtos.push(novo);
-  saveDB(db);
-  res.json(novo);
-});
-
-app.delete("/api/produtos/:id", (req, res) => {
-  const db = loadDB();
-  const id = parseInt(req.params.id);
-  db.produtos = db.produtos.filter((p) => p.id !== id);
-  saveDB(db);
-  res.json({ success: true });
-});
-
-// PIX com valor e TXID
-app.get("/api/pix/:valor/:txid?", async (req, res) => {
-  try {
-    const raw = String(req.params.valor).replace(",", ".");
-    const valor = Number(raw);
-    if (!Number.isFinite(valor) || valor < 0.01) {
-      return res.status(400).json({ error: "Valor inválido (mínimo 0,01)" });
+    async function carregarProdutos(){
+      const res = await fetch(API.produtos, { cache:"no-store" }); const produtos = await res.json();
+      const tbody = document.getElementById("listaProdutos"); tbody.innerHTML = "";
+      produtos.forEach(p=>{
+        const tr = document.createElement("tr");
+        tr.innerHTML = `<td>${p.nome}</td><td>R$ ${moeda(p.preco)}</td><td>${p.estoque}</td>
+        <td><button class="btn-remover" onclick="removerProduto(${p.id})">Excluir</button></td>`;
+        tbody.appendChild(tr);
+      });
     }
-    const txid = (req.params.txid || "PIX" + Date.now()).slice(0, 25);
-
-    const qrCodePix = QrCodePix({
-      version: "01",
-      key: chavePix,
-      name: nomeLoja,
-      city: cidade,
-      transactionId: txid,
-      value: Number(valor.toFixed(2)),
+    async function removerProduto(id){ if(confirm("Excluir?")){ await fetch(`${API.produtos}/${id}`,{method:"DELETE"}); carregarProdutos(); } }
+    document.getElementById("formProdutos").addEventListener("submit", async e=>{
+      e.preventDefault();
+      const novo = {
+        nome: nomeProduto.value,
+        preco: parseFloat(precoProduto.value),
+        estoque: parseInt(estoqueProduto.value),
+        imagem: imagemProduto.value || "https://via.placeholder.com/300x300?text=Produto"
+      };
+      await fetch(API.produtos, { method:"POST", headers:{ "Content-Type":"application/json" }, body: JSON.stringify(novo) });
+      e.target.reset(); carregarProdutos();
     });
 
-    const payload = qrCodePix.payload().replace(/\s+/g, "");
-    const qrCodeImage = await qrCodePix.base64();
+    let pedidosAnteriores = [];
+    async function carregarPedidos(){
+      const res = await fetch(API.pedidos, { cache:"no-store" }); const pedidos = await res.json();
+      const tbody = document.getElementById("listaPedidos"); tbody.innerHTML = "";
+      pedidos.forEach(p=>{
+        if(!pedidosAnteriores.find(x=>x.id===p.id)) document.getElementById("alertSound").play();
+        const itens = (p.itens||[]).map(i=>`${i.nome} x${i.quantidade}`).join(", ");
+        const tr = document.createElement("tr");
+        tr.innerHTML = `<td>${p.id}</td><td>${p.cliente?.nome||"-"}</td><td>${p.cliente?.endereco||"-"}</td>
+        <td>${itens}</td><td>R$ ${moeda(p.total)}</td><td>${p.pix?"PIX":"Outro"}</td>
+        <td>
+          <select onchange="atualizarStatus(${p.id}, this.value)">
+            <option ${p.status==="Pendente"?"selected":""}>Pendente</option>
+            <option ${p.status==="Preparando"?"selected":""}>Preparando</option>
+            <option ${p.status==="Saiu para entrega"?"selected":""}>Saiu para entrega</option>
+            <option ${p.status==="Concluído"?"selected":""}>Concluído</option>
+          </select>
+        </td>
+        <td><button class="btn-remover" onclick="removerPedido(${p.id})">Excluir</button></td>`;
+        tbody.appendChild(tr);
+      });
+      pedidosAnteriores = pedidos;
+    }
+    async function atualizarStatus(id, status){
+      await fetch(`${API.pedidos}/${id}/status`, { method:"PUT", headers:{ "Content-Type":"application/json" }, body: JSON.stringify({ status }) });
+      carregarPedidos();
+    }
+    async function removerPedido(id){ if(confirm("Excluir pedido?")){ await fetch(`${API.pedidos}/${id}`, { method:"DELETE" }); carregarPedidos(); } }
 
-    res.set("Cache-Control", "no-store");
-    res.json({ payload, qrCodeImage, txid, chave: chavePix });
-  } catch (err) {
-    console.error("Erro ao gerar PIX:", err);
-    res.status(500).json({ error: "Falha ao gerar QR Code PIX" });
-  }
-});
-
-// Pedidos
-app.get("/api/pedidos", (_req, res) => {
-  const db = loadDB();
-  res.json(db.pedidos);
-});
-
-app.get("/api/pedidos/:id", (req, res) => {
-  const db = loadDB();
-  const id = parseInt(req.params.id);
-  const pedido = db.pedidos.find((p) => p.id === id);
-  if (!pedido) return res.status(404).json({ error: "Pedido não encontrado" });
-  res.json(pedido);
-});
-
-app.post("/api/pedidos", async (req, res) => {
-  const db = loadDB();
-  const pedido = { ...req.body, id: Date.now(), status: "Pendente" };
-
-  if (Array.isArray(pedido.itens)) {
-    pedido.itens.forEach((item) => {
-      const produto = db.produtos.find((p) => p.id === item.id);
-      if (produto) {
-        produto.estoque -= item.quantidade;
-        if (produto.estoque < 0) produto.estoque = 0;
-      }
-    });
-  }
-
-  try {
-    const rawTotal = String(pedido.total).replace(",", ".");
-    const valor = Number(rawTotal);
-    if (!Number.isFinite(valor) || valor < 0.01) throw new Error("Valor do pedido inválido");
-
-    const txid = ("PED" + pedido.id).slice(0, 25);
-    const qrCodePix = QrCodePix({
-      version: "01",
-      key: chavePix,
-      name: nomeLoja,
-      city: cidade,
-      transactionId: txid,
-      value: Number(valor.toFixed(2)),
-    });
-
-    pedido.pix = {
-      payload: qrCodePix.payload().replace(/\s+/g, ""),
-      qrCodeImage: await qrCodePix.base64(),
-      txid,
-      chave: chavePix,
-    };
-  } catch (err) {
-    console.error("Erro ao gerar PIX do pedido:", err);
-    pedido.pix = null;
-  }
-
-  db.pedidos.push(pedido);
-  saveDB(db);
-  res.json(pedido);
-});
-
-app.put("/api/pedidos/:id/status", (req, res) => {
-  const db = loadDB();
-  const id = parseInt(req.params.id);
-  const pedido = db.pedidos.find((p) => p.id === id);
-  if (!pedido) return res.status(404).json({ error: "Pedido não encontrado" });
-  pedido.status = req.body.status || pedido.status;
-  saveDB(db);
-  res.json(pedido);
-});
-
-app.delete("/api/pedidos/:id", (req, res) => {
-  const db = loadDB();
-  const id = parseInt(req.params.id);
-  db.pedidos = db.pedidos.filter((p) => p.id !== id);
-  saveDB(db);
-  res.json({ success: true });
-});
-
-// ---------- Start ----------
-app.listen(PORT, '0.0.0.0', () => {
-  console.log(`Servidor rodando na porta ${PORT}`);
-});
+    document.addEventListener("DOMContentLoaded", ()=>{ carregarProdutos(); carregarPedidos(); setInterval(carregarPedidos, 5000); });
+  </script>
+</body>
+</html>
