@@ -55,42 +55,44 @@
     </section>
   </div>
 
-  <!-- áudio embutido (data URI) + playsinline para iOS -->
+  <!-- áudio embutido em base64 (não precisa de arquivo externo) -->
   <audio id="alertSound" preload="auto" playsinline
     src="data:audio/wav;base64,UklGRiQAAABXQVZFZm10IBAAAAABAAEAESsAACJWAAACABYAAAABAAACAAA=">
   </audio>
 
-  <!-- botões para liberar/testar o som no celular -->
+  <!-- botões de som -->
   <div id="soundButtons" style="position:fixed;right:16px;bottom:16px;display:flex;gap:8px;z-index:9999;">
     <button id="btnAtivarSom" style="background:#27ae60;color:#fff;border:none;border-radius:999px;padding:10px 14px;box-shadow:0 2px 6px rgba(0,0,0,.3);display:none;">🔔 Ativar som</button>
     <button id="btnTestarSom" style="background:#3498db;color:#fff;border:none;border-radius:999px;padding:10px 14px;box-shadow:0 2px 6px rgba(0,0,0,.3);display:none;">▶️ Testar som</button>
   </div>
 
-  <!-- indicador de status do som -->
+  <!-- status do som -->
   <div id="soundStatus" style="position:fixed;left:16px;bottom:16px;background:#333;color:#fff;padding:6px 10px;border-radius:8px;font:12px/1 Arial;opacity:.9;z-index:9999;display:none">
     som: <b id="soundState">desconhecido</b>
   </div>
 
+  <!-- painel de notificações -->
+  <div id="notifPanel" style="position:fixed;left:16px;bottom:60px;background:#333;color:#fff;padding:6px 10px;border-radius:8px;font:12px/1 Arial;opacity:.9;z-index:9999;">
+    notificações: <b id="notifState">checando…</b>
+    <button id="btnTestNotif" style="margin-left:8px;background:#f39c12;color:#111;border:none;border-radius:6px;padding:6px 8px;cursor:pointer;">
+      🔔 Testar notificação
+    </button>
+  </div>
+
   <script>
     const API = { produtos: "/api/produtos", pedidos: "/api/pedidos" };
-
-    function mostrarSecao(id){
-      document.querySelectorAll("section").forEach(s=>s.classList.remove("active"));
-      document.getElementById(id).classList.add("active");
-    }
     const moeda = n => Number(n).toFixed(2).replace('.', ',');
 
-    // ====== ALERTAS (som embutido + WebAudio + banner + vibração) ======
+    // ---------------- ALERTAS ----------------
     const alertEl   = document.getElementById("alertSound");
     const btnAtivar = document.getElementById("btnAtivarSom");
     const btnTestar = document.getElementById("btnTestarSom");
     const soundBox  = document.getElementById("soundStatus");
     const soundState= document.getElementById("soundState");
 
-    let pedidosConhecidos = new Set();  // evita tocar na 1ª carga
-    let audioPronto = false;            // <audio> liberado
-    let waCtx = null;                   // AudioContext p/ fallback
-    let waUnlocked = false;
+    let pedidosConhecidos = new Set();
+    let audioPronto = false;
+    let waCtx = null;
 
     function setSoundStatus(txt, ok=false){
       soundBox.style.display = "block";
@@ -98,230 +100,126 @@
       soundBox.style.background = ok ? "#1e7e34" : "#7d3c3c";
     }
 
-    // Web Audio fallback: bip ~250ms
+    // Fallback WebAudio
     function waBeep(){
-      if (!waCtx) return false;
+      if (!waCtx) return;
       const now = waCtx.currentTime;
       const osc = waCtx.createOscillator();
       const gain= waCtx.createGain();
-      osc.type = "sine";
-      osc.frequency.value = 880;
+      osc.type = "sine"; osc.frequency.value = 880;
       gain.gain.setValueAtTime(0.001, now);
       gain.gain.exponentialRampToValueAtTime(0.2, now + 0.01);
       gain.gain.exponentialRampToValueAtTime(0.001, now + 0.25);
       osc.connect(gain).connect(waCtx.destination);
-      osc.start(now);
-      osc.stop(now + 0.26);
-      return true;
+      osc.start(now); osc.stop(now + 0.26);
     }
 
     async function unlockWithGesture(){
-      // cria/resume WebAudio
-      try {
-        const Ctx = window.AudioContext || window.webkitAudioContext;
-        if (!waCtx && Ctx) waCtx = new Ctx();
-        if (waCtx && waCtx.state !== "running") await waCtx.resume();
-        waUnlocked = !waCtx || waCtx.state === "running";
-      } catch { waUnlocked = false; }
+      const Ctx = window.AudioContext || window.webkitAudioContext;
+      if (!waCtx && Ctx) waCtx = new Ctx();
+      if (waCtx && waCtx.state !== "running") await waCtx.resume();
 
-      // tenta liberar <audio>
-      try {
-        alertEl.currentTime = 0;
-        await alertEl.play();
-        alertEl.pause();
-        audioPronto = true;
-      } catch { audioPronto = false; }
+      try { alertEl.currentTime=0; await alertEl.play(); alertEl.pause(); audioPronto=true; }
+      catch { audioPronto=false; }
 
       if (audioPronto) setSoundStatus("OK (<audio>)", true);
-      else if (waUnlocked) setSoundStatus("OK (WebAudio)", true);
+      else if (waCtx && waCtx.state==="running") setSoundStatus("OK (WebAudio)", true);
       else setSoundStatus("bloqueado", false);
-
-      if (!audioPronto && !waUnlocked) showButtons(); else hideButtons();
     }
 
-    function showButtons(){ btnAtivar.style.display = "inline-block"; btnTestar.style.display = "inline-block"; }
-    function hideButtons(){ btnAtivar.style.display = "none"; btnTestar.style.display = "none"; }
-
-    // gestos que tentam liberar automaticamente
-    window.addEventListener("touchstart", ()=>{ unlockWithGesture(); }, { once:true });
-    window.addEventListener("click",      ()=>{ unlockWithGesture(); }, { once:true });
-
-    // botões
-    btnAtivar.addEventListener("click", unlockWithGesture);
-    btnTestar.addEventListener("click", async ()=>{
-      await unlockWithGesture();
-      await tocarAlerta(true); // força 1 toque de teste
-    });
-
-    // mostra os botões se em 1s não liberou
-    setTimeout(()=>{ if(!audioPronto) showButtons(); }, 1000);
-
-    // Notificações nativas (banner)
-    (function pedirPermissaoNotificacao(){
-      if ("Notification" in window && Notification.permission === "default") {
-        Notification.requestPermission().catch(()=>{});
-      }
-    })();
-
-    function notificarBanner(p){
-      if (!("Notification" in window) || Notification.permission !== "granted") return;
-      new Notification("Novo pedido!", {
-        body: `#${p.id} · ${p.cliente?.nome || "Cliente"} · R$ ${Number(p.total).toFixed(2).replace('.', ',')}`,
-        tag: `pedido-${p.id}`
-      });
-    }
-    function vibrarCurto(){ if (navigator.vibrate) navigator.vibrate(200); }
-
-    // tocar alerta: tenta <audio>; se falhar, usa WebAudio
     async function tocarAlerta(force=false){
       try {
-        if (audioPronto || force) {
-          alertEl.currentTime = 0;
-          await alertEl.play();
-          setSoundStatus("OK (<audio>)", true);
-          return;
-        }
-      } catch { audioPronto = false; }
-
-      if (waCtx) {
-        try {
-          if (waCtx.state !== "running") await waCtx.resume();
-          waBeep();
-          setSoundStatus("OK (WebAudio)", true);
-          hideButtons();
-          return;
-        } catch {}
-      }
-      setSoundStatus("bloqueado", false);
-      showButtons();
+        if (audioPronto || force) { alertEl.currentTime=0; await alertEl.play(); return; }
+      } catch { audioPronto=false; }
+      if (waCtx) waBeep();
     }
-    // ====== FIM ALERTAS ======
 
-    // -------- PRODUTOS --------
+    btnAtivar.addEventListener("click", unlockWithGesture);
+    btnTestar.addEventListener("click", ()=>{ unlockWithGesture(); tocarAlerta(true); });
+    window.addEventListener("touchstart", ()=>unlockWithGesture(), {once:true});
+    window.addEventListener("click", ()=>unlockWithGesture(), {once:true});
+    setTimeout(()=>{ if(!audioPronto) { btnAtivar.style.display="inline-block"; btnTestar.style.display="inline-block"; }},1000);
+
+    // ---------------- NOTIFICAÇÕES ----------------
+    const notifStateEl=document.getElementById("notifState");
+    const btnTestNotif=document.getElementById("btnTestNotif");
+
+    function atualizarNotifState(){ 
+      if(!("Notification" in window)){ notifStateEl.textContent="não suportadas"; return; }
+      notifStateEl.textContent=Notification.permission;
+    }
+    async function pedirPermissaoNotificacao(){
+      if(!("Notification" in window)) return;
+      if(Notification.permission==="default"){ try{ await Notification.requestPermission(); }catch{} }
+      atualizarNotifState();
+    }
+    function notificarBanner(p){
+      if(!("Notification" in window) || Notification.permission!=="granted") return;
+      new Notification("Novo pedido!",{
+        body:`#${p.id} · ${p.cliente?.nome||"Cliente"} · R$ ${moeda(p.total)}`,
+        tag:`pedido-${p.id}`
+      });
+    }
+    btnTestNotif.addEventListener("click", ()=>{ pedirPermissaoNotificacao().then(()=>{ notificarBanner({id:"teste",cliente:{nome:"Teste"},total:1}); }); });
+    atualizarNotifState(); pedirPermissaoNotificacao();
+    function vibrarCurto(){ if(navigator.vibrate) navigator.vibrate(200); }
+
+    // ---------------- PRODUTOS ----------------
     async function carregarProdutos(){
-      try{
-        const res = await fetch(API.produtos, { cache:"no-store" });
-        if(!res.ok) throw new Error("Falha ao carregar produtos");
-        const produtos = await res.json();
-        const tbody = document.getElementById("listaProdutos");
-        tbody.innerHTML = "";
-        produtos.forEach(p=>{
-          const tr = document.createElement("tr");
-          tr.innerHTML = `
-            <td>${p.nome}</td>
-            <td>R$ ${moeda(p.preco)}</td>
-            <td>${p.estoque}</td>
-            <td><button class="btn-remover" onclick="removerProduto(${p.id})">Excluir</button></td>`;
-          tbody.appendChild(tr);
-        });
-      }catch(e){
-        console.error(e);
-      }
+      const res=await fetch(API.produtos,{cache:"no-store"});
+      const produtos=await res.json();
+      const tbody=document.getElementById("listaProdutos"); tbody.innerHTML="";
+      produtos.forEach(p=>{
+        const tr=document.createElement("tr");
+        tr.innerHTML=`<td>${p.nome}</td><td>R$ ${moeda(p.preco)}</td><td>${p.estoque}</td>
+          <td><button class="btn-remover" onclick="removerProduto(${p.id})">Excluir</button></td>`;
+        tbody.appendChild(tr);
+      });
     }
-
-    async function removerProduto(id){
-      if(confirm("Excluir?")){
-        await fetch(`${API.produtos}/${id}`,{method:"DELETE"});
-        carregarProdutos();
-      }
-    }
-
-    document.getElementById("formProdutos").addEventListener("submit", async e=>{
+    async function removerProduto(id){ if(confirm("Excluir?")){ await fetch(`${API.produtos}/${id}`,{method:"DELETE"}); carregarProdutos(); } }
+    document.getElementById("formProdutos").addEventListener("submit",async e=>{
       e.preventDefault();
-      const novo = {
-        nome: nomeProduto.value,
-        preco: parseFloat(precoProduto.value),
-        estoque: parseInt(estoqueProduto.value),
-        imagem: imagemProduto.value || "https://via.placeholder.com/300x300?text=Produto"
-      };
-      await fetch(API.produtos, {
-        method:"POST",
-        headers:{ "Content-Type":"application/json" },
-        body: JSON.stringify(novo)
-      });
-      e.target.reset();
-      carregarProdutos();
+      const novo={nome:nomeProduto.value,preco:parseFloat(precoProduto.value),estoque:parseInt(estoqueProduto.value),imagem:imagemProduto.value||"https://via.placeholder.com/300x300?text=Produto"};
+      await fetch(API.produtos,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(novo)});
+      e.target.reset(); carregarProdutos();
     });
 
-    // -------- PEDIDOS --------
-    let falhasSeguidas = 0;
-
+    // ---------------- PEDIDOS ----------------
     async function carregarPedidos(){
-      try{
-        const res = await fetch(API.pedidos, { cache:"no-store" });
-        if(!res.ok) throw new Error("HTTP " + res.status);
-        const pedidos = await res.json();
-
-        const tbody = document.getElementById("listaPedidos");
-        tbody.innerHTML = "";
-
-        // 1ª carga: registra ids e NÃO toca
-        if (pedidosConhecidos.size === 0) {
-          pedidos.forEach(p => pedidosConhecidos.add(p.id));
-        } else {
-          // cargas seguintes: alerta só para ids novos
-          pedidos.forEach(p => {
-            if (!pedidosConhecidos.has(p.id)) {
-              pedidosConhecidos.add(p.id);
-              tocarAlerta();
-              notificarBanner(p);
-              vibrarCurto();
-            }
-          });
-        }
-
+      const res=await fetch(API.pedidos,{cache:"no-store"});
+      const pedidos=await res.json();
+      const tbody=document.getElementById("listaPedidos"); tbody.innerHTML="";
+      if(pedidosConhecidos.size===0){ pedidos.forEach(p=>pedidosConhecidos.add(p.id)); }
+      else{
         pedidos.forEach(p=>{
-          const itens = (p.itens || []).map(i => `${i.nome} x${i.quantidade}`).join(", ");
-          const tr = document.createElement("tr");
-          tr.innerHTML = `
-            <td>${p.id}</td>
-            <td>${p.cliente?.nome || "-"}</td>
-            <td>${p.cliente?.endereco || "-"}</td>
-            <td>${itens}</td>
-            <td>R$ ${moeda(p.total)}</td>
-            <td>${p.pix ? "PIX" : "Outro"}</td>
-            <td>
-              <select onchange="atualizarStatus(${p.id}, this.value)">
-                <option ${p.status==="Pendente"?"selected":""}>Pendente</option>
-                <option ${p.status==="Preparando"?"selected":""}>Preparando</option>
-                <option ${p.status==="Saiu para entrega"?"selected":""}>Saiu para entrega</option>
-                <option ${p.status==="Concluído"?"selected":""}>Concluído</option>
-              </select>
-            </td>
-            <td><button class="btn-remover" onclick="removerPedido(${p.id})">Excluir</button></td>`;
-          tbody.appendChild(tr);
+          if(!pedidosConhecidos.has(p.id)){
+            pedidosConhecidos.add(p.id);
+            tocarAlerta();
+            notificarBanner(p);
+            vibrarCurto();
+          }
         });
-
-        falhasSeguidas = 0; // OK
-      }catch(e){
-        console.warn("Falha ao carregar pedidos:", e);
-        falhasSeguidas++;
-        const espera = Math.min(15000, 2000 * falhasSeguidas); // 2s -> 15s
-        setTimeout(carregarPedidos, espera);
       }
-    }
-
-    async function atualizarStatus(id, status){
-      await fetch(`${API.pedidos}/${id}/status`, {
-        method:"PUT",
-        headers:{ "Content-Type":"application/json" },
-        body: JSON.stringify({ status })
+      pedidos.forEach(p=>{
+        const itens=(p.itens||[]).map(i=>`${i.nome} x${i.quantidade}`).join(", ");
+        const tr=document.createElement("tr");
+        tr.innerHTML=`<td>${p.id}</td><td>${p.cliente?.nome||"-"}</td><td>${p.cliente?.endereco||"-"}</td>
+          <td>${itens}</td><td>R$ ${moeda(p.total)}</td><td>${p.pix?"PIX":"Outro"}</td>
+          <td><select onchange="atualizarStatus(${p.id},this.value)">
+            <option ${p.status==="Pendente"?"selected":""}>Pendente</option>
+            <option ${p.status==="Preparando"?"selected":""}>Preparando</option>
+            <option ${p.status==="Saiu para entrega"?"selected":""}>Saiu para entrega</option>
+            <option ${p.status==="Concluído"?"selected":""}>Concluído</option>
+          </select></td>
+          <td><button class="btn-remover" onclick="removerPedido(${p.id})">Excluir</button></td>`;
+        tbody.appendChild(tr);
       });
-      carregarPedidos();
     }
+    async function atualizarStatus(id,status){ await fetch(`${API.pedidos}/${id}/status`,{method:"PUT",headers:{"Content-Type":"application/json"},body:JSON.stringify({status})}); carregarPedidos(); }
+    async function removerPedido(id){ if(confirm("Excluir pedido?")){ await fetch(`${API.pedidos}/${id}`,{method:"DELETE"}); carregarPedidos(); } }
 
-    async function removerPedido(id){
-      if(confirm("Excluir pedido?")){
-        await fetch(`${API.pedidos}/${id}`, { method:"DELETE" });
-        carregarPedidos();
-      }
-    }
-
-    document.addEventListener("DOMContentLoaded", ()=>{
-      carregarProdutos();
-      carregarPedidos();
-      setInterval(carregarPedidos, 5000);
-    });
+    // ---------------- START ----------------
+    document.addEventListener("DOMContentLoaded",()=>{ carregarProdutos(); carregarPedidos(); setInterval(carregarPedidos,5000); });
   </script>
 </body>
 </html>
