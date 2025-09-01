@@ -197,4 +197,6 @@ app.delete("/api/pedidos/:id", (req, res) => {
 });
 
 // ---------- Start ----------
-app.listen(PORT, "0.0.0.0
+app.listen(PORT, '0.0.0.0', () => {
+  console.log(`Servidor rodando na porta ${PORT}`);
+});
