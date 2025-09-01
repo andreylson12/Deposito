@@ -13,8 +13,8 @@ app.use(express.static(path.join(__dirname, "public")));
 const DB_FILE = path.join(__dirname, "db.json");
 
 // =================== CONFIGURAÇÃO PIX ===================
-const chavePix = "5599991842200";         // chave PIX no formato E.164 (celular com DDI 55)
-const nomeLoja = "REGINALDO SANTOS";      // nome do recebedor (até 25 caracteres)
+const chavePix = "61144602351";         // chave PIX no formato E.164 (celular com DDI 55)
+const nomeLoja = "ANDREYLSON SODRE";      // nome do recebedor (até 25 caracteres)
 const cidade = "SAMBAIBA";                // cidade obrigatória (até 15 caracteres)
 
 // =================== FUNÇÕES AUXILIARES ===================
@@ -158,4 +158,5 @@ app.delete("/api/pedidos/:id", (req, res) => {
 app.listen(PORT, () => {
   console.log(`Servidor rodando em http://localhost:${PORT}`);
 });
+
 
