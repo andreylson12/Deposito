@@ -151,8 +151,9 @@
 
       const total = carrinho.reduce((s,i)=>s+i.preco*i.quantidade,0);
 
-      // Cria objeto do pedido para enviar ao backend
+      // Gera ID único para o pedido
       const pedido = {
+        id: Date.now(),
         cliente: { nome, endereco },
         itens: carrinho.map(i=>({ id:i.id, nome:i.nome, preco:i.preco, quantidade:i.quantidade })),
         total: total,
@@ -169,8 +170,10 @@
         });
         if(!res.ok) throw new Error("Falha ao enviar pedido");
 
+        // Exibe somente uma vez o pagamento PIX
         if(pagamento === "PIX"){
-          document.getElementById("pagamento").style.display = "block";
+          const pagamentoSec = document.getElementById("pagamento");
+          pagamentoSec.style.display = "block";
           document.getElementById("pixQrCode").src = "/qrcode_pix.png"; 
           document.getElementById("pixPayload").textContent = "99 991842200"; 
           document.getElementById("pixChave").textContent = "99 991842200"; 
@@ -178,7 +181,7 @@
           document.getElementById("pagamento").style.display = "none";
         }
 
-        alert("Pedido realizado com sucesso! Total: R$ " + moeda(total));
+        alert("Pedido realizado com sucesso!\nID do pedido: " + pedido.id + "\nTotal: R$ " + moeda(total));
         carrinho = [];
         renderCarrinho();
       } catch(err){
@@ -191,7 +194,6 @@
       alert("Funcionalidade de status desativada nesta versão simplificada.");
     }
 
-    // Função copiar PIX com mensagem
     function copiarPix(){
       const texto = document.getElementById("pixPayload").textContent;
       navigator.clipboard.writeText(texto).then(()=>{
