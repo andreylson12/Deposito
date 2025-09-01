@@ -5,57 +5,38 @@
   <title>Rs Lubrificante - Posto RS</title>
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <style>
-    body { font-family: Arial, sans-serif; margin:0; padding:0; background:#f4f4f4; color:#333; }
-    header { background:#111; color:#fff; padding:15px; text-align:center; }
-    .produtos { display:grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap:15px; padding:20px; }
-    .card { background:#fff; border-radius:8px; box-shadow:0 2px 5px rgba(0,0,0,0.2); padding:15px; text-align:center; }
-    .card img { max-width:100%; border-radius:6px; height:150px; object-fit:cover; }
-    .card h3 { margin:10px 0 5px; }
-    .card p { margin:5px 0; }
-    .card button { background:#27ae60; color:#fff; border:none; padding:8px 12px; border-radius:5px; cursor:pointer; }
-    .card button:hover { background:#219150; }
-    #carrinho { background:#fff; padding:15px; border-radius:8px; margin:20px; box-shadow:0 2px 5px rgba(0,0,0,0.2); }
-    table { width:100%; border-collapse:collapse; margin-bottom:10px; }
-    th, td { padding:8px; border-bottom:1px solid #ddd; text-align:center; }
-    .btn-finalizar { width:100%; padding:12px; background:#3498db; color:#fff; border:none; border-radius:6px; font-size:16px; cursor:pointer; }
-    .btn-finalizar[disabled] { opacity:.65; cursor:not-allowed; }
-    .btn-finalizar:hover { background:#2980b9; }
-    #pagamento { text-align:center; margin:20px; display:none; }
-    #pagamento img { width:220px; margin:10px auto; display:block; }
-    #statusPedido { background:#fff; margin:20px; padding:15px; border-radius:8px; box-shadow:0 2px 5px rgba(0,0,0,0.2); }
-    input, select { width:100%; padding:10px; margin:5px 0; border:1px solid #ccc; border-radius:5px; }
-    #pixPayload { font-size:14px; background:#f0f0f0; padding:10px; border-radius:5px; word-break:break-all; }
-    #btnCopiar { margin-top:10px; padding:8px 12px; background:#27ae60; color:#fff; border:none; border-radius:5px; cursor:pointer; }
-    #btnCopiar:hover { background:#219150; }
-    #msgCopiado { color:green; font-size:14px; margin-top:8px; display:none; }
+    body{font-family:Arial,sans-serif;margin:0;background:#f4f4f4;color:#333}
+    header{background:#111;color:#fff;padding:15px;text-align:center}
+    .produtos{display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:15px;padding:20px}
+    .card{background:#fff;border-radius:8px;box-shadow:0 2px 5px rgba(0,0,0,.2);padding:15px;text-align:center}
+    .card img{max-width:100%;border-radius:6px;height:150px;object-fit:cover}
+    .btn{background:#27ae60;color:#fff;border:none;padding:8px 12px;border-radius:5px;cursor:pointer}
+    .btn:hover{background:#219150}
+    #carrinho{background:#fff;padding:15px;border-radius:8px;margin:20px;box-shadow:0 2px 5px rgba(0,0,0,.2)}
+    table{width:100%;border-collapse:collapse;margin-bottom:10px}
+    th,td{padding:8px;border-bottom:1px solid #ddd;text-align:center}
+    .btn-finalizar{width:100%;padding:12px;background:#3498db;color:#fff;border:none;border-radius:6px;font-size:16px;cursor:pointer}
+    .btn-finalizar[disabled]{opacity:.65;cursor:not-allowed}
+    #pagamento{text-align:center;margin:20px;display:none}
+    #pagamento img{width:220px;margin:10px auto;display:block}
+    input,select{width:100%;padding:10px;margin:5px 0;border:1px solid #ccc;border-radius:5px}
+    #pixPayload{font-size:14px;background:#f0f0f0;padding:10px;border-radius:5px;word-break:break-all}
   </style>
 </head>
 <body>
-  <header>
-    <h1>Rs Lubrificante - Posto RS</h1>
-    <p>Escolha seus produtos e faça seu pedido</p>
-  </header>
+  <header><h1>Rs Lubrificante - Posto RS</h1><p>Escolha seus produtos e faça seu pedido</p></header>
 
   <main>
     <section class="produtos" id="listaProdutos"></section>
 
     <section id="carrinho">
       <h2>🛒 Seu Carrinho</h2>
-      <table>
-        <thead>
-          <tr><th>Produto</th><th>Qtd</th><th>Preço</th><th>Total</th></tr>
-        </thead>
-        <tbody id="itensCarrinho"></tbody>
-      </table>
+      <table><thead><tr><th>Produto</th><th>Qtd</th><th>Preço</th><th>Total</th></tr></thead><tbody id="itensCarrinho"></tbody></table>
       <h3 id="totalCarrinho">Total: R$ 0,00</h3>
 
-      <input type="text" id="clienteNome" placeholder="Seu Nome" required />
-      <input type="text" id="clienteEndereco" placeholder="Endereço de entrega" required />
-      <select id="clientePagamento">
-        <option value="PIX">PIX</option>
-        <option value="Dinheiro">Dinheiro</option>
-        <option value="Cartão">Cartão</option>
-      </select>
+      <input id="clienteNome" placeholder="Seu Nome" required />
+      <input id="clienteEndereco" placeholder="Endereço de entrega" required />
+      <select id="clientePagamento"><option value="PIX">PIX</option><option>Dinheiro</option><option>Cartão</option></select>
 
       <button id="btnFinalizar" class="btn-finalizar" onclick="finalizarPedido()">Finalizar Pedido</button>
     </section>
@@ -66,150 +47,85 @@
       <p>Chave PIX (telefone): <strong id="pixChave">99 991842200</strong></p>
       <p>Copia e Cola PIX:</p>
       <p id="pixPayload">99 991842200</p>
-      <button id="btnCopiar" onclick="copiarPix()">📋 Copiar Código PIX</button>
-      <p id="msgCopiado">✅ Copiado!</p>
-    </section>
-
-    <section id="statusPedido">
-      <h2>📌 Consultar Status do Pedido</h2>
-      <input type="number" id="pedidoIdInput" placeholder="Digite o ID do pedido" />
-      <button onclick="consultarStatus()">Consultar</button>
-      <p id="resultadoStatus"></p>
+      <button class="btn" onclick="copiarPix()">📋 Copiar Código PIX</button>
+      <p id="msgCopiado" style="display:none;color:green">✅ Copiado!</p>
     </section>
   </main>
 
   <script>
     let carrinho = [];
-    function moeda(n){ return Number(n).toFixed(2).replace('.', ','); }
+    const moeda = n => Number(n).toFixed(2).replace('.', ',');
 
     async function carregarProdutos(){
-      try {
-        const res = await fetch("/api/produtos", { cache: "no-store" });
-        if(!res.ok) throw new Error("Falha ao buscar produtos");
-        const produtos = await res.json();
-        const container = document.getElementById("listaProdutos");
-        container.innerHTML = "";
-        produtos.filter(p=>Number(p.estoque)>0).forEach(p=>{
-          const imagem = p.imagem || "https://via.placeholder.com/300x300?text=Produto";
-          const div = document.createElement("div");
-          div.className = "card";
-          div.innerHTML = `
-            <img src="${imagem}" alt="${p.nome}">
-            <h3>${p.nome}</h3>
-            <p>R$ ${moeda(p.preco)}</p>
-            <p>Estoque: ${p.estoque}</p>
-            <button onclick="adicionarCarrinho(${p.id}, '${p.nome.replace(/'/g,"&#39;")}', ${Number(p.preco)})">Adicionar</button>
-          `;
-          container.appendChild(div);
-        });
-      } catch (err) {
-        console.error("Erro ao carregar produtos:", err);
-        alert("Não foi possível carregar os produtos. Tente novamente.");
-      }
+      const res = await fetch("/api/produtos", { cache:"no-store" });
+      const produtos = await res.json();
+      const el = document.getElementById("listaProdutos"); el.innerHTML = "";
+      produtos.filter(p=>Number(p.estoque)>0).forEach(p=>{
+        const img = p.imagem || "https://via.placeholder.com/300x300?text=Produto";
+        const div = document.createElement("div"); div.className="card";
+        div.innerHTML = `<img src="${img}" alt="${p.nome}"><h3>${p.nome}</h3><p>R$ ${moeda(p.preco)}</p><p>Estoque: ${p.estoque}</p>
+        <button class="btn" onclick="adicionar(${p.id}, '${p.nome.replace(/'/g,'&#39;')}', ${Number(p.preco)})">Adicionar</button>`;
+        el.appendChild(div);
+      });
     }
-
-    function adicionarCarrinho(id, nome, preco){
-      const precoNum = Number(preco);
-      if (!Number.isFinite(precoNum)) {
-        alert("Preço inválido para o item.");
-        return;
-      }
+    function adicionar(id,nome,preco){
       const item = carrinho.find(i=>i.id===id);
-      if(item){ item.quantidade++; }
-      else { carrinho.push({id, nome, preco: precoNum, quantidade:1}); }
-      renderCarrinho();
+      if(item) item.quantidade++; else carrinho.push({id,nome,preco,quantidade:1});
+      render();
     }
-
-    function renderCarrinho(){
-      const tbody = document.getElementById("itensCarrinho");
-      tbody.innerHTML = "";
+    function render(){
+      const tb = document.getElementById("itensCarrinho"); tb.innerHTML = "";
       let total = 0;
       carrinho.forEach(i=>{
-        const subtotal = i.preco * i.quantidade;
-        total += subtotal;
+        const sub = i.preco*i.quantidade; total += sub;
         const tr = document.createElement("tr");
-        tr.innerHTML = `
-          <td>${i.nome}</td>
-          <td>${i.quantidade}</td>
-          <td>R$ ${moeda(i.preco)}</td>
-          <td>R$ ${moeda(subtotal)}</td>
-        `;
-        tbody.appendChild(tr);
+        tr.innerHTML = `<td>${i.nome}</td><td>${i.quantidade}</td><td>R$ ${moeda(i.preco)}</td><td>R$ ${moeda(sub)}</td>`;
+        tb.appendChild(tr);
       });
       document.getElementById("totalCarrinho").textContent = "Total: R$ " + moeda(total);
     }
-
     async function finalizarPedido(){
-      if(carrinho.length===0){ return alert("Carrinho vazio!"); }
-
-      const btn = document.getElementById("btnFinalizar");
-      btn.disabled = true;
-
+      if(!carrinho.length) return alert("Carrinho vazio!");
+      const btn = document.getElementById("btnFinalizar"); btn.disabled = true;
       try{
         const nome = document.getElementById("clienteNome").value.trim();
         const endereco = document.getElementById("clienteEndereco").value.trim();
         const pagamento = document.getElementById("clientePagamento").value;
+        if(!nome || !endereco) return alert("Preencha seu nome e endereço.");
 
-        if(!nome || !endereco){
-          alert("Preencha seu nome e endereço.");
-          return;
-        }
-
-        const total = carrinho.reduce((s,i)=>s + (i.preco*i.quantidade), 0);
-
+        const total = carrinho.reduce((s,i)=>s+i.preco*i.quantidade,0);
         const pedido = {
           id: Date.now(),
           cliente: { nome, endereco },
           itens: carrinho.map(i=>({ id:i.id, nome:i.nome, preco:i.preco, quantidade:i.quantidade })),
           total: Number(total.toFixed(2)),
-          pagamento,
-          pix: pagamento==="PIX",
-          status: "Pendente"
+          pagamento, pix: pagamento==="PIX", status:"Pendente"
         };
 
-        const res = await fetch("/api/pedidos", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(pedido)
-        });
-        if(!res.ok) throw new Error("Falha ao enviar pedido");
+        const res = await fetch("/api/pedidos", { method:"POST", headers:{ "Content-Type":"application/json" }, body: JSON.stringify(pedido) });
         const salvo = await res.json();
 
-        if(pagamento === "PIX" && salvo.pix){
-          const pagamentoSec = document.getElementById("pagamento");
-          pagamentoSec.style.display = "block";
+        if (pagamento==="PIX" && salvo.pix){
+          const s = document.getElementById("pagamento"); s.style.display="block";
           document.getElementById("pixQrCode").src = salvo.pix.qrCodeImage || "/qrcode_pix.png";
           document.getElementById("pixPayload").textContent = salvo.pix.payload || "99 991842200";
           document.getElementById("pixChave").textContent = salvo.pix.chave || "99 991842200";
         } else {
-          document.getElementById("pagamento").style.display = "none";
-          document.getElementById("pixQrCode").src = "/qrcode_pix.png";
-          document.getElementById("pixPayload").textContent = "99 991842200";
-          document.getElementById("pixChave").textContent = "99 991842200";
+          document.getElementById("pagamento").style.display="none";
         }
 
-        alert("Pedido realizado com sucesso!\nID do pedido: " + salvo.id + "\nTotal: R$ " + moeda(total));
-        carrinho = [];
-        renderCarrinho();
-      } catch(err){
-        console.error(err);
-        alert("Erro ao finalizar o pedido. Tente novamente.");
-      } finally {
-        btn.disabled = false;
-      }
+        alert("Pedido realizado! ID: " + salvo.id + " — Total: R$ " + moeda(total));
+        carrinho = []; render();
+      }catch(e){ console.error(e); alert("Erro ao finalizar. Tente novamente."); }
+      finally{ btn.disabled = false; }
     }
-
-    function consultarStatus(){ alert("Funcionalidade de status desativada nesta versão."); }
-
     function copiarPix(){
-      const texto = document.getElementById("pixPayload").textContent;
-      navigator.clipboard.writeText(texto).then(()=>{
-        const msg = document.getElementById("msgCopiado");
-        msg.style.display = "block";
-        setTimeout(()=>{ msg.style.display = "none"; }, 3000);
-      }).catch(err=> console.error("Erro ao copiar:", err));
+      const txt = document.getElementById("pixPayload").textContent;
+      navigator.clipboard.writeText(txt).then(()=>{
+        const msg = document.getElementById("msgCopiado"); msg.style.display="block";
+        setTimeout(()=>msg.style.display="none", 3000);
+      });
     }
-
     document.addEventListener("DOMContentLoaded", carregarProdutos);
   </script>
 </body>
