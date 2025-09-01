@@ -66,22 +66,47 @@
     }
     const moeda = n => Number(n).toFixed(2).replace('.', ',');
 
-    // ====== SOM DE ALERTA (mínimo de mudanças) ======
+    // ====== ALERTAS (som + banner + vibração) ======
     const alertEl = document.getElementById("alertSound");
     let pedidosConhecidos = new Set();  // ids já vistos (evita alarme na 1ª carga)
 
-    // 1º gesto do usuário ajuda a destravar áudio no mobile
-    window.addEventListener("touchstart", () => {}, { once:true });
-    window.addEventListener("click",      () => {}, { once:true });
+    // Desbloqueia áudio no mobile no 1º gesto do usuário
+    (function desbloquearAudioUmaVez(){
+      const tryUnlock = async () => {
+        try { await alertEl.play(); alertEl.pause(); } catch {}
+      };
+      window.addEventListener("touchstart", tryUnlock, { once:true });
+      window.addEventListener("click",      tryUnlock, { once:true });
+    })();
 
     async function tocarAlerta(){
       if (!alertEl) return;
       try {
+        alertEl.currentTime = 0;
         await alertEl.play();
       } catch (e) {
         console.warn("Som bloqueado (autoplay). Toque uma vez na tela para habilitar.");
       }
     }
+
+    function pedirPermissaoNotificacao(){
+      if (!("Notification" in window)) return;
+      if (Notification.permission === "default") {
+        Notification.requestPermission().catch(()=>{});
+      }
+    }
+    pedirPermissaoNotificacao();
+
+    function notificarBanner(pedido){
+      if (!("Notification" in window)) return;
+      if (Notification.permission !== "granted") return;
+      new Notification("Novo pedido!", {
+        body: `#${pedido.id} de ${pedido.cliente?.nome || "Cliente"} · Total R$ ${Number(pedido.total).toFixed(2).replace('.', ',')}`,
+        tag: `pedido-${pedido.id}`,
+        icon: "/icone_pedido.png" // opcional: coloque em /public
+      });
+    }
+    function vibrarCurto(){ if (navigator.vibrate) navigator.vibrate(200); }
     // ================================================
 
     // -------- PRODUTOS --------
@@ -140,15 +165,17 @@
         const tbody = document.getElementById("listaPedidos");
         tbody.innerHTML = "";
 
-        // 1ª carga: registra ids e NÃO toca som
+        // 1ª carga: registra ids e NÃO toca
         if (pedidosConhecidos.size === 0) {
           pedidos.forEach(p => pedidosConhecidos.add(p.id));
         } else {
-          // cargas seguintes: alarme somente para ids ainda não vistos
+          // cargas seguintes: alerta só para ids novos
           pedidos.forEach(p => {
             if (!pedidosConhecidos.has(p.id)) {
               pedidosConhecidos.add(p.id);
-              tocarAlerta(); // 🔔 toca aqui para pedido novo
+              tocarAlerta();       // som
+              notificarBanner(p);  // banner
+              vibrarCurto();       // vibra
             }
           });
         }
@@ -181,7 +208,7 @@
     }
 
     async function atualizarStatus(id, status){
-      await fetch(`${API.pedidos}/\${id}/status`.replace("\${id}", id), {
+      await fetch(`${API.pedidos}/${id}/status`, {
         method:"PUT",
         headers:{ "Content-Type":"application/json" },
         body: JSON.stringify({ status })
@@ -191,7 +218,7 @@
 
     async function removerPedido(id){
       if(confirm("Excluir pedido?")){
-        await fetch(`${API.pedidos}/\${id}`.replace("\${id}", id), { method:"DELETE" });
+        await fetch(`${API.pedidos}/${id}`, { method:"DELETE" });
         carregarPedidos();
       }
     }
