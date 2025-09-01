@@ -97,9 +97,14 @@ async function finalizarPedido(){
     if(res.ok){
       const salvo = await res.json();
       alert("Pedido realizado com sucesso! ID do pedido: " + salvo.id);
-      if(pagamento === "PIX"){
-        gerarPix(total);
+
+      // 🔹 Se for PIX, exibe diretamente o QRCode e o copia-e-cola vindo do backend
+      if(pagamento === "PIX" && salvo.pix){
+        document.getElementById("pixQr").src = salvo.pix.qrCodeImage;
+        document.getElementById("pixCodigo").value = salvo.pix.payload;
+        document.getElementById("pagamento").style.display = "block";
       }
+
       carrinho = [];
       renderCarrinho();
     } else {
@@ -112,18 +117,6 @@ async function finalizarPedido(){
 }
 
 // ---------------- PIX ----------------
-async function gerarPix(total){
-  try {
-    const qrRes = await fetch(`/api/pix/${total}`);
-    const { qr, payload } = await qrRes.json();
-    document.getElementById("pixQr").src = qr;
-    document.getElementById("pixCodigo").value = payload;
-    document.getElementById("pagamento").style.display = "block";
-  } catch (err) {
-    console.error("Erro ao gerar PIX:", err);
-  }
-}
-
 function copiarPix(){
   const input = document.getElementById("pixCodigo");
   input.select();
