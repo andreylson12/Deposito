@@ -55,8 +55,14 @@
     </section>
   </div>
 
-  <!-- som do alerta; coloque /public/som_alerta.mp3. Se não existir, usaremos fallback -->
+  <!-- som do alerta -->
   <audio id="alertSound" src="/som_alerta.mp3" preload="auto"></audio>
+
+  <!-- botões flutuantes para liberar/testar o som no celular -->
+  <div id="soundButtons" style="position:fixed;right:16px;bottom:16px;display:flex;gap:8px;z-index:9999;">
+    <button id="btnAtivarSom" style="background:#27ae60;color:#fff;border:none;border-radius:999px;padding:10px 14px;box-shadow:0 2px 6px rgba(0,0,0,.3);display:none;">🔔 Ativar som</button>
+    <button id="btnTestarSom" style="background:#3498db;color:#fff;border:none;border-radius:999px;padding:10px 14px;box-shadow:0 2px 6px rgba(0,0,0,.3);display:none;">▶️ Testar som</button>
+  </div>
 
   <script>
     const API = { produtos: "/api/produtos", pedidos: "/api/pedidos" };
@@ -69,7 +75,10 @@
 
     // ====== ALERTAS (som + banner + vibração) ======
     const alertEl = document.getElementById("alertSound");
-    let pedidosConhecidos = new Set();  // ids já vistos (evita alarme na 1ª carga)
+    const btnAtivar = document.getElementById("btnAtivarSom");
+    const btnTestar = document.getElementById("btnTestarSom");
+    let pedidosConhecidos = new Set();  // evita tocar na 1ª carga
+    let audioPronto = false;
 
     // fallback de som caso /som_alerta.mp3 não exista
     (function garantirSom(){
@@ -79,17 +88,48 @@
         .catch(() => { alertEl.src = fallbackBeep; });
     })();
 
-    // Desbloqueia áudio no mobile no 1º gesto
-    (function desbloquearAudioUmaVez(){
-      const tryUnlock = async () => { try { await alertEl.play(); alertEl.pause(); } catch {} };
-      window.addEventListener("touchstart", tryUnlock, { once:true });
-      window.addEventListener("click",      tryUnlock, { once:true });
-    })();
+    function mostrarBotoes(){ btnAtivar.style.display = "inline-block"; btnTestar.style.display = "inline-block"; }
+    function esconderBotoes(){ btnAtivar.style.display = "none"; btnTestar.style.display = "none"; }
+
+    // tenta liberar o áudio com gesto do usuário
+    async function ativarSom(){
+      try {
+        alertEl.currentTime = 0;
+        await alertEl.play();   // play real exigido por alguns aparelhos
+        alertEl.pause();
+        audioPronto = true;
+        esconderBotoes();
+        console.log("[som] liberado");
+      } catch(e) {
+        console.warn("[som] ainda bloqueado:", e?.message);
+        mostrarBotoes();
+      }
+    }
+
+    // 1º gesto na página também tenta liberar
+    window.addEventListener("touchstart", ()=>{ if(!audioPronto) ativarSom(); }, { once:true });
+    window.addEventListener("click",      ()=>{ if(!audioPronto) ativarSom(); }, { once:true });
+
+    // botões
+    btnAtivar.addEventListener("click", ativarSom);
+    btnTestar.addEventListener("click", async ()=>{
+      if (!audioPronto) await ativarSom();
+      await tocarAlerta();
+    });
+
+    // mostra os botões 1s após abrir, se ainda não liberou
+    setTimeout(()=>{ if(!audioPronto) mostrarBotoes(); }, 1000);
 
     async function tocarAlerta(){
-      if (!alertEl) return;
-      try { alertEl.currentTime = 0; await alertEl.play(); }
-      catch { console.warn("Som bloqueado (autoplay). Toque uma vez na tela para habilitar."); }
+      if (!audioPronto) { mostrarBotoes(); return; }
+      try {
+        alertEl.currentTime = 0;
+        await alertEl.play();
+      } catch(e) {
+        audioPronto = false;     // perdeu o desbloqueio
+        mostrarBotoes();
+        console.warn("[som] falhou ao tocar:", e?.message);
+      }
     }
 
     // Notificações nativas
@@ -129,7 +169,6 @@
         });
       }catch(e){
         console.error(e);
-        // mantém a tela sem popup
       }
     }
 
