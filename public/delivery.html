@@ -2,7 +2,7 @@
 <html lang="pt-BR">
 <head>
   <meta charset="UTF-8">
-  <title>Rs lubrificante - Posto</title>
+  <title>Rs Lubrificante - Posto RS</title>
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <style>
     body { font-family: Arial, sans-serif; margin:0; padding:0; background:#f4f4f4; color:#333; }
@@ -28,7 +28,7 @@
 </head>
 <body>
   <header>
-    <h1> Rs lubrificante - Posto RS</h1>
+    <h1>Rs Lubrificante - Posto RS</h1>
     <p>Escolha seus produtos e faça seu pedido</p>
   </header>
 
@@ -62,9 +62,11 @@
     <!-- PAGAMENTO PIX -->
     <section id="pagamento">
       <h2>💳 Pagamento via PIX</h2>
-      <img id="pixQrCode" src="" alt="QR Code PIX">
+      <!-- QR Code fixo da pasta public -->
+      <img id="pixQrCode" src="/qrcode_pix.png" alt="QR Code PIX">
+      <p>Chave PIX (telefone): <strong id="pixChave">99 991842200</strong></p>
       <p>Copia e Cola PIX:</p>
-      <p id="pixPayload"></p>
+      <p id="pixPayload">99 991842200</p>
     </section>
 
     <!-- CONSULTAR STATUS -->
@@ -134,7 +136,7 @@
       document.getElementById("totalCarrinho").textContent = "Total: R$ " + moeda(total);
     }
 
-    async function finalizarPedido(){
+    function finalizarPedido(){
       if(carrinho.length===0){ return alert("Carrinho vazio!"); }
 
       const nome = document.getElementById("clienteNome").value;
@@ -144,65 +146,27 @@
       if(!nome || !endereco) return alert("Preencha seu nome e endereço.");
 
       const total = carrinho.reduce((s,i)=>s+i.preco*i.quantidade,0);
-      const pedido = {
-        cliente: nome,
-        endereco,
-        itens: carrinho,
-        total,
-        pagamento
-      };
 
-      try {
-        const res = await fetch("/api/pedidos", {
-          method:"POST",
-          headers:{"Content-Type":"application/json"},
-          body:JSON.stringify(pedido)
-        });
-        if(res.ok){
-          const salvo = await res.json();
-          alert("Pedido realizado com sucesso! ID do pedido: " + salvo.id);
-          carrinho = [];
-          renderCarrinho();
-
-          // Se for PIX, mostra o QR e copia e cola
-          if(salvo.pix){
-            document.getElementById("pagamento").style.display = "block";
-            document.getElementById("pixQrCode").src = salvo.pix.qrCodeImage;
-            document.getElementById("pixPayload").textContent = salvo.pix.payload;
-          }
-        } else {
-          alert("Erro ao enviar pedido");
-        }
-      } catch (err) {
-        console.error("Erro ao finalizar pedido:", err);
-        alert("Falha na conexão com o servidor.");
+      // Mostra pagamento PIX com QR fixo
+      if(pagamento === "PIX"){
+        document.getElementById("pagamento").style.display = "block";
+        document.getElementById("pixQrCode").src = "/qrcode_pix.png"; // QR fixo
+        document.getElementById("pixPayload").textContent = "99 991842200"; // chave fixa
+        document.getElementById("pixChave").textContent = "99 991842200"; // mostra a chave
+      } else {
+        document.getElementById("pagamento").style.display = "none";
       }
+
+      alert("Pedido realizado com sucesso! Total: R$ " + moeda(total));
+      carrinho = [];
+      renderCarrinho();
     }
 
-    async function consultarStatus(){
-      const id = document.getElementById("pedidoIdInput").value;
-      if(!id) return alert("Informe o ID do pedido");
-      try {
-        const res = await fetch("/api/pedidos/"+id);
-        if(res.ok){
-          const pedido = await res.json();
-          document.getElementById("resultadoStatus").textContent =
-            "Status: " + pedido.status + " | Total: R$ " + moeda(pedido.total);
-        } else {
-          document.getElementById("resultadoStatus").textContent = "Pedido não encontrado.";
-        }
-      } catch (err) {
-        console.error("Erro ao consultar status:", err);
-        document.getElementById("resultadoStatus").textContent = "Erro na consulta.";
-      }
+    function consultarStatus(){
+      alert("Funcionalidade de status desativada nesta versão simplificada.");
     }
 
     document.addEventListener("DOMContentLoaded", carregarProdutos);
   </script>
 </body>
 </html>
-
-
-
-
-
