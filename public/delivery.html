@@ -170,7 +170,7 @@
         if(pagamento === "PIX" && salvo.pix){
           const pagamentoSec = document.getElementById("pagamento");
           pagamentoSec.style.display = "block";
-          // Mostra QR Code devolvido pela API (base64)
+          // QR code retornado pela API (base64)
           document.getElementById("pixQrCode").src = salvo.pix.qrCodeImage || "/qrcode_pix.png";
           document.getElementById("pixPayload").textContent = salvo.pix.payload || "99 991842200";
           document.getElementById("pixChave").textContent = salvo.pix.chave || "99 991842200";
