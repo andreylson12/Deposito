@@ -1,4 +1,4 @@
-// server.js – versão estável p/ Railway
+// server.js – estável para Railway
 const express = require("express");
 const fs = require("fs");
 const path = require("path");
@@ -11,23 +11,23 @@ const PORT = process.env.PORT || 3000;
 // ---------- Middlewares ----------
 app.use(express.json());
 
-// CSP básica (ajuste se usar libs externas diferentes)
-app.use((req, res, next) => {
-  res.setHeader(
-    "Content-Security-Policy",
-    [
-      "default-src 'self'",
-      "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com https://www.gstatic.com",
-      "script-src 'self' 'unsafe-inline' https://translate.googleapis.com https://translate.google.com https://www.gstatic.com",
-      "img-src 'self' data: https://*.gstatic.com https://*.google.com",
-      "frame-src 'self' https://translate.google.com",
-      "connect-src 'self'"
-    ].join("; ")
-  );
-  next();
-});
+// (Opcional) CSP — mantenha comentada enquanto testa
+// app.use((req, res, next) => {
+//   res.setHeader(
+//     "Content-Security-Policy",
+//     [
+//       "default-src 'self'",
+//       "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com https://www.gstatic.com",
+//       "script-src 'self' 'unsafe-inline' https://translate.googleapis.com https://translate.google.com https://www.gstatic.com",
+//       "img-src 'self' data: https://*.gstatic.com https://*.google.com",
+//       "frame-src 'self' https://translate.google.com",
+//       "connect-src 'self'"
+//     ].join("; ")
+//   );
+//   next();
+// });
 
-// **ATENÇÃO**: coloque seus HTML/CSS/JS em /public
+// arquivos estáticos
 app.use(express.static(path.join(__dirname, "public")));
 
 app.use(
@@ -45,10 +45,7 @@ app.get("/health", (_req, res) => res.json({ ok: true }));
 const DB_FILE = path.join(__dirname, "db.json");
 function loadDB() {
   if (!fs.existsSync(DB_FILE)) {
-    fs.writeFileSync(
-      DB_FILE,
-      JSON.stringify({ produtos: [], pedidos: [] }, null, 2)
-    );
+    fs.writeFileSync(DB_FILE, JSON.stringify({ produtos: [], pedidos: [] }, null, 2));
   }
   return JSON.parse(fs.readFileSync(DB_FILE));
 }
@@ -149,8 +146,7 @@ app.post("/api/pedidos", async (req, res) => {
   try {
     const rawTotal = String(pedido.total).replace(",", ".");
     const valor = Number(rawTotal);
-    if (!Number.isFinite(valor) || valor < 0.01)
-      throw new Error("Valor do pedido inválido");
+    if (!Number.isFinite(valor) || valor < 0.01) throw new Error("Valor do pedido inválido");
 
     const txid = ("PED" + pedido.id).slice(0, 25);
     const qrCodePix = QrCodePix({
