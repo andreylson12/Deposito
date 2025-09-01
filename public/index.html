@@ -133,11 +133,7 @@
             <td>${itensTxt}</td>
             <td>R$ ${moeda(p.total)}</td>
             <td>
-              ${
-                p.pix 
-                  ? `<button onclick="copiarPix('${p.pix.payload}')">Copiar PIX</button>`
-                  : `<span class="badge">Sem PIX</span>`
-              }
+              ${p.pix ? `<span class="badge">PIX</span>` : `<span class="badge">Sem PIX</span>`}
             </td>
             <td>
               <select onchange="atualizarStatus(${p.id}, this.value)">
@@ -172,23 +168,14 @@
       }
     }
 
-    function copiarPix(payload){
-      navigator.clipboard.writeText(payload).then(()=>{
-        alert("Código PIX copiado!");
-      });
-    }
-
     // Inicialização
     document.addEventListener("DOMContentLoaded", ()=>{
       mostrarSecao("produtos");
       carregarProdutos();
       carregarPedidos();
 
-      // Atualiza automaticamente a lista de pedidos a cada 5s
       setInterval(carregarPedidos, 5000);
     });
   </script>
 </body>
 </html>
-
-
