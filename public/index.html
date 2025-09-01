@@ -73,6 +73,9 @@
     </section>
   </div>
 
+  <!-- Som de alerta -->
+  <audio id="alertSound" src="/som_alerta.mp3" preload="auto"></audio>
+
   <script>
     function mostrarSecao(secao){
       document.querySelectorAll("section").forEach(s => s.classList.remove("active"));
@@ -126,13 +129,24 @@
     });
 
     // -------- PEDIDOS --------
+    let pedidosAnteriores = [];
+
     async function carregarPedidos(){
       try {
         const res = await fetch("/api/pedidos", { cache: "no-store" });
         const pedidos = await res.json();
         const tbody = document.getElementById("listaPedidos");
         tbody.innerHTML = "";
-        
+
+        // Detecta novos pedidos
+        pedidos.forEach(p=>{
+          if(!pedidosAnteriores.find(x => x.id === p.id)){
+            notificarPedido(p);
+          }
+        });
+        pedidosAnteriores = pedidos;
+
+        // Atualiza tabela
         pedidos.forEach(p => {
           const itensTxt = p.itens.map(i => `${i.nome} x${i.quantidade}`).join(", ");
           const tr = document.createElement("tr");
@@ -157,9 +171,27 @@
           `;
           tbody.appendChild(tr);
         });
+
       } catch (err) {
         console.error("Erro ao carregar pedidos:", err);
       }
+    }
+
+    function notificarPedido(novoPedido){
+      // Notificação visual
+      if("Notification" in window && Notification.permission === "granted"){
+        new Notification("Novo pedido!", {
+          body: `Pedido #${novoPedido.id} de ${novoPedido.cliente?.nome || "Cliente"}`,
+          icon: "/icone_pedido.png"
+        });
+      }
+      // Toca som
+      document.getElementById("alertSound").play();
+    }
+
+    // Solicita permissão de notificação
+    if("Notification" in window && Notification.permission !== "granted"){
+      Notification.requestPermission();
     }
 
     async function atualizarStatus(id, novoStatus){
