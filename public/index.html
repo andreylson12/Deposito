@@ -133,7 +133,7 @@
             <td>${itensTxt}</td>
             <td>R$ ${moeda(p.total)}</td>
             <td>
-              ${p.pix ? `<span class="badge">PIX</span>` : `<span class="badge">Sem PIX</span>`}
+              ${p.pix ? `<span class="badge">PIX disponível</span>` : `<span class="badge">Sem PIX</span>`}
             </td>
             <td>
               <select onchange="atualizarStatus(${p.id}, this.value)">
@@ -173,7 +173,6 @@
       mostrarSecao("produtos");
       carregarProdutos();
       carregarPedidos();
-
       setInterval(carregarPedidos, 5000);
     });
   </script>
