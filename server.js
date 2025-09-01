@@ -15,7 +15,7 @@ const DB_FILE = path.join(__dirname, "db.json");
 // =================== CONFIGURAÇÃO PIX ===================
 // Use UMA chave válida: CPF sem pontos/traço OU sua chave aleatória real.
 // Se quiser usar CPF: const chavePix = "61144602351";
-const chavePix = "2b3f0e72-5970-4c77-8c38-0e3fadcae5b9";  // chave aleatória
+const chavePix = "99 991842200";  // telefone
 const nomeLoja = "ANDREYLSON SODRE";                      // máx 25 caracteres
 const cidade   = "SAMBAIBA";                              // máx 15 caracteres, sem acento
 
@@ -182,3 +182,4 @@ app.delete("/api/pedidos/:id", (req, res) => {
 app.listen(PORT, () => {
   console.log(`Servidor rodando em http://localhost:${PORT}`);
 });
+
