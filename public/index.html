@@ -1,9 +1,9 @@
 <!DOCTYPE html>
 <html lang="pt-BR">
 <head>
-  <meta charset="UTF-8">
+  <meta charset="UTF-8" />
   <title>Painel - Adega Sistema</title>
-  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
   <style>
     body { margin:0; font-family:Arial, sans-serif; display:flex; height:100vh; background:#1c1c1c; color:#fff; }
     .sidebar{ width:220px; background:#111; padding:20px; }
@@ -38,10 +38,10 @@
     <section id="produtos">
       <h2>🏷️ Produtos</h2>
       <form id="formProdutos">
-        <input type="text" id="nomeProduto" placeholder="Nome" required>
-        <input type="number" id="precoProduto" placeholder="Preço" step="0.01" required>
-        <input type="number" id="estoqueProduto" placeholder="Estoque" required>
-        <input type="text" id="imagemProduto" placeholder="URL da Imagem">
+        <input type="text" id="nomeProduto" placeholder="Nome" required />
+        <input type="number" id="precoProduto" placeholder="Preço" step="0.01" required />
+        <input type="number" id="estoqueProduto" placeholder="Estoque" required />
+        <input type="text" id="imagemProduto" placeholder="URL da Imagem" />
         <button type="submit">Salvar</button>
       </form>
       <table>
@@ -77,7 +77,11 @@
   <audio id="alertSound" src="/som_alerta.mp3" preload="auto"></audio>
 
   <script>
-    const BACKEND_URL = "https://deposito-production-4579.up.railway.app";
+    // Use sempre relativo ao mesmo domínio (Railway)
+    const API = {
+      produtos: "/api/produtos",
+      pedidos: "/api/pedidos",
+    };
 
     function mostrarSecao(secao){
       document.querySelectorAll("section").forEach(s => s.classList.remove("active"));
@@ -89,7 +93,7 @@
     // -------- PRODUTOS --------
     async function carregarProdutos(){
       try {
-        const res = await fetch(`${BACKEND_URL}/api/produtos`, { cache: "no-store" });
+        const res = await fetch(API.produtos, { cache: "no-store" });
         const produtos = await res.json();
         const tbody = document.getElementById("listaProdutos");
         tbody.innerHTML = "";
@@ -112,7 +116,7 @@
 
     async function removerProduto(id){
       if(confirm("Tem certeza que deseja excluir este produto?")){
-        await fetch(`${BACKEND_URL}/api/produtos/${id}`, { method:"DELETE" });
+        await fetch(\`\${API.produtos}/\${id}\`, { method:"DELETE" });
         carregarProdutos();
       }
     }
@@ -125,7 +129,7 @@
         estoque: parseInt(document.getElementById("estoqueProduto").value),
         imagem: document.getElementById("imagemProduto").value || "https://via.placeholder.com/300x300?text=Produto"
       };
-      await fetch(`${BACKEND_URL}/api/produtos`, { method:"POST", headers:{ "Content-Type":"application/json" }, body: JSON.stringify(novo) });
+      await fetch(API.produtos, { method:"POST", headers:{ "Content-Type":"application/json" }, body: JSON.stringify(novo) });
       e.target.reset();
       carregarProdutos();
     });
@@ -135,7 +139,7 @@
 
     async function carregarPedidos(){
       try {
-        const res = await fetch(`${BACKEND_URL}/api/pedidos`, { cache: "no-store" });
+        const res = await fetch(API.pedidos, { cache: "no-store" });
         const pedidos = await res.json();
         const tbody = document.getElementById("listaPedidos");
         tbody.innerHTML = "";
@@ -149,7 +153,7 @@
         pedidosAnteriores = pedidos;
 
         pedidos.forEach(p => {
-          const itensTxt = p.itens.map(i => `${i.nome} x${i.quantidade}`).join(", ");
+          const itensTxt = (p.itens || []).map(i => \`\${i.nome} x\${i.quantidade}\`).join(", ");
           const tr = document.createElement("tr");
           tr.innerHTML = `
             <td>${p.id}</td>
@@ -194,7 +198,7 @@
 
     async function atualizarStatus(id, novoStatus){
       try {
-        await fetch(`${BACKEND_URL}/api/pedidos/${id}/status`, {
+        await fetch(\`\${API.pedidos}/\${id}/status\`, {
           method:"PUT",
           headers:{"Content-Type":"application/json"},
           body:JSON.stringify({ status: novoStatus })
@@ -208,7 +212,7 @@
     async function removerPedido(id){
       if(confirm("Deseja excluir este pedido?")){
         try {
-          await fetch(`${BACKEND_URL}/api/pedidos/${id}`, { method:"DELETE" });
+          await fetch(\`\${API.pedidos}/\${id}\`, { method:"DELETE" });
           carregarPedidos();
         } catch (err) {
           console.error("Erro ao remover pedido:", err);
