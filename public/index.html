@@ -55,13 +55,20 @@
     </section>
   </div>
 
-  <!-- som do alerta -->
-  <audio id="alertSound" src="/som_alerta.mp3" preload="auto"></audio>
+  <!-- áudio embutido (data URI) + playsinline para iOS -->
+  <audio id="alertSound" preload="auto" playsinline
+    src="data:audio/wav;base64,UklGRiQAAABXQVZFZm10IBAAAAABAAEAESsAACJWAAACABYAAAABAAACAAA=">
+  </audio>
 
-  <!-- botões flutuantes para liberar/testar o som no celular -->
+  <!-- botões para liberar/testar o som no celular -->
   <div id="soundButtons" style="position:fixed;right:16px;bottom:16px;display:flex;gap:8px;z-index:9999;">
     <button id="btnAtivarSom" style="background:#27ae60;color:#fff;border:none;border-radius:999px;padding:10px 14px;box-shadow:0 2px 6px rgba(0,0,0,.3);display:none;">🔔 Ativar som</button>
     <button id="btnTestarSom" style="background:#3498db;color:#fff;border:none;border-radius:999px;padding:10px 14px;box-shadow:0 2px 6px rgba(0,0,0,.3);display:none;">▶️ Testar som</button>
+  </div>
+
+  <!-- indicador de status do som -->
+  <div id="soundStatus" style="position:fixed;left:16px;bottom:16px;background:#333;color:#fff;padding:6px 10px;border-radius:8px;font:12px/1 Arial;opacity:.9;z-index:9999;display:none">
+    som: <b id="soundState">desconhecido</b>
   </div>
 
   <script>
@@ -73,66 +80,83 @@
     }
     const moeda = n => Number(n).toFixed(2).replace('.', ',');
 
-    // ====== ALERTAS (som + banner + vibração) ======
-    const alertEl = document.getElementById("alertSound");
+    // ====== ALERTAS (som embutido + WebAudio + banner + vibração) ======
+    const alertEl   = document.getElementById("alertSound");
     const btnAtivar = document.getElementById("btnAtivarSom");
     const btnTestar = document.getElementById("btnTestarSom");
+    const soundBox  = document.getElementById("soundStatus");
+    const soundState= document.getElementById("soundState");
+
     let pedidosConhecidos = new Set();  // evita tocar na 1ª carga
-    let audioPronto = false;
+    let audioPronto = false;            // <audio> liberado
+    let waCtx = null;                   // AudioContext p/ fallback
+    let waUnlocked = false;
 
-    // fallback de som caso /som_alerta.mp3 não exista
-    (function garantirSom(){
-      const fallbackBeep = "data:audio/wav;base64,UklGRiQAAABXQVZFZm10IBAAAAABAAEAESsAACJWAAACABYAAAABAAACAAA=";
-      fetch("/som_alerta.mp3", { method: "HEAD", cache: "no-store" })
-        .then(r => { if (!r.ok) alertEl.src = fallbackBeep; })
-        .catch(() => { alertEl.src = fallbackBeep; });
-    })();
-
-    function mostrarBotoes(){ btnAtivar.style.display = "inline-block"; btnTestar.style.display = "inline-block"; }
-    function esconderBotoes(){ btnAtivar.style.display = "none"; btnTestar.style.display = "none"; }
-
-    // tenta liberar o áudio com gesto do usuário
-    async function ativarSom(){
-      try {
-        alertEl.currentTime = 0;
-        await alertEl.play();   // play real exigido por alguns aparelhos
-        alertEl.pause();
-        audioPronto = true;
-        esconderBotoes();
-        console.log("[som] liberado");
-      } catch(e) {
-        console.warn("[som] ainda bloqueado:", e?.message);
-        mostrarBotoes();
-      }
+    function setSoundStatus(txt, ok=false){
+      soundBox.style.display = "block";
+      soundState.textContent = txt;
+      soundBox.style.background = ok ? "#1e7e34" : "#7d3c3c";
     }
 
-    // 1º gesto na página também tenta liberar
-    window.addEventListener("touchstart", ()=>{ if(!audioPronto) ativarSom(); }, { once:true });
-    window.addEventListener("click",      ()=>{ if(!audioPronto) ativarSom(); }, { once:true });
+    // Web Audio fallback: bip ~250ms
+    function waBeep(){
+      if (!waCtx) return false;
+      const now = waCtx.currentTime;
+      const osc = waCtx.createOscillator();
+      const gain= waCtx.createGain();
+      osc.type = "sine";
+      osc.frequency.value = 880;
+      gain.gain.setValueAtTime(0.001, now);
+      gain.gain.exponentialRampToValueAtTime(0.2, now + 0.01);
+      gain.gain.exponentialRampToValueAtTime(0.001, now + 0.25);
+      osc.connect(gain).connect(waCtx.destination);
+      osc.start(now);
+      osc.stop(now + 0.26);
+      return true;
+    }
 
-    // botões
-    btnAtivar.addEventListener("click", ativarSom);
-    btnTestar.addEventListener("click", async ()=>{
-      if (!audioPronto) await ativarSom();
-      await tocarAlerta();
-    });
+    async function unlockWithGesture(){
+      // cria/resume WebAudio
+      try {
+        const Ctx = window.AudioContext || window.webkitAudioContext;
+        if (!waCtx && Ctx) waCtx = new Ctx();
+        if (waCtx && waCtx.state !== "running") await waCtx.resume();
+        waUnlocked = !waCtx || waCtx.state === "running";
+      } catch { waUnlocked = false; }
 
-    // mostra os botões 1s após abrir, se ainda não liberou
-    setTimeout(()=>{ if(!audioPronto) mostrarBotoes(); }, 1000);
-
-    async function tocarAlerta(){
-      if (!audioPronto) { mostrarBotoes(); return; }
+      // tenta liberar <audio>
       try {
         alertEl.currentTime = 0;
         await alertEl.play();
-      } catch(e) {
-        audioPronto = false;     // perdeu o desbloqueio
-        mostrarBotoes();
-        console.warn("[som] falhou ao tocar:", e?.message);
-      }
+        alertEl.pause();
+        audioPronto = true;
+      } catch { audioPronto = false; }
+
+      if (audioPronto) setSoundStatus("OK (<audio>)", true);
+      else if (waUnlocked) setSoundStatus("OK (WebAudio)", true);
+      else setSoundStatus("bloqueado", false);
+
+      if (!audioPronto && !waUnlocked) showButtons(); else hideButtons();
     }
 
-    // Notificações nativas
+    function showButtons(){ btnAtivar.style.display = "inline-block"; btnTestar.style.display = "inline-block"; }
+    function hideButtons(){ btnAtivar.style.display = "none"; btnTestar.style.display = "none"; }
+
+    // gestos que tentam liberar automaticamente
+    window.addEventListener("touchstart", ()=>{ unlockWithGesture(); }, { once:true });
+    window.addEventListener("click",      ()=>{ unlockWithGesture(); }, { once:true });
+
+    // botões
+    btnAtivar.addEventListener("click", unlockWithGesture);
+    btnTestar.addEventListener("click", async ()=>{
+      await unlockWithGesture();
+      await tocarAlerta(true); // força 1 toque de teste
+    });
+
+    // mostra os botões se em 1s não liberou
+    setTimeout(()=>{ if(!audioPronto) showButtons(); }, 1000);
+
+    // Notificações nativas (banner)
     (function pedirPermissaoNotificacao(){
       if ("Notification" in window && Notification.permission === "default") {
         Notification.requestPermission().catch(()=>{});
@@ -143,12 +167,35 @@
       if (!("Notification" in window) || Notification.permission !== "granted") return;
       new Notification("Novo pedido!", {
         body: `#${p.id} · ${p.cliente?.nome || "Cliente"} · R$ ${Number(p.total).toFixed(2).replace('.', ',')}`,
-        tag: `pedido-${p.id}`,
-        icon: "/icone_pedido.png" // opcional (coloque em /public)
+        tag: `pedido-${p.id}`
       });
     }
     function vibrarCurto(){ if (navigator.vibrate) navigator.vibrate(200); }
-    // ================================================
+
+    // tocar alerta: tenta <audio>; se falhar, usa WebAudio
+    async function tocarAlerta(force=false){
+      try {
+        if (audioPronto || force) {
+          alertEl.currentTime = 0;
+          await alertEl.play();
+          setSoundStatus("OK (<audio>)", true);
+          return;
+        }
+      } catch { audioPronto = false; }
+
+      if (waCtx) {
+        try {
+          if (waCtx.state !== "running") await waCtx.resume();
+          waBeep();
+          setSoundStatus("OK (WebAudio)", true);
+          hideButtons();
+          return;
+        } catch {}
+      }
+      setSoundStatus("bloqueado", false);
+      showButtons();
+    }
+    // ====== FIM ALERTAS ======
 
     // -------- PRODUTOS --------
     async function carregarProdutos(){
