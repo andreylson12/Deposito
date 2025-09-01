@@ -11,9 +11,5 @@
     "qrcode-pix": "^2.0.5",
     "cors": "^2.8.5"
   },
-  "engines": {
-    "node": ">=18"
-  }
+  "engines": { "node": ">=18" }
 }
-
-
