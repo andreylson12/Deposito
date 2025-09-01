@@ -77,6 +77,8 @@
   <audio id="alertSound" src="/som_alerta.mp3" preload="auto"></audio>
 
   <script>
+    const BACKEND_URL = "URL_DO_SEU_BACKEND"; // Coloque aqui o link do Railway
+
     function mostrarSecao(secao){
       document.querySelectorAll("section").forEach(s => s.classList.remove("active"));
       document.getElementById(secao).classList.add("active");
@@ -87,7 +89,7 @@
     // -------- PRODUTOS --------
     async function carregarProdutos(){
       try {
-        const res = await fetch("/api/produtos", { cache: "no-store" });
+        const res = await fetch(`${BACKEND_URL}/api/produtos`, { cache: "no-store" });
         const produtos = await res.json();
         const tbody = document.getElementById("listaProdutos");
         tbody.innerHTML = "";
@@ -110,7 +112,7 @@
 
     async function removerProduto(id){
       if(confirm("Tem certeza que deseja excluir este produto?")){
-        await fetch("/api/produtos/"+id, { method:"DELETE" });
+        await fetch(`${BACKEND_URL}/api/produtos/${id}`, { method:"DELETE" });
         carregarProdutos();
       }
     }
@@ -123,7 +125,7 @@
         estoque: parseInt(document.getElementById("estoqueProduto").value),
         imagem: document.getElementById("imagemProduto").value || "https://via.placeholder.com/300x300?text=Produto"
       };
-      await fetch("/api/produtos", { method:"POST", headers:{ "Content-Type":"application/json" }, body: JSON.stringify(novo) });
+      await fetch(`${BACKEND_URL}/api/produtos`, { method:"POST", headers:{ "Content-Type":"application/json" }, body: JSON.stringify(novo) });
       e.target.reset();
       carregarProdutos();
     });
@@ -133,7 +135,7 @@
 
     async function carregarPedidos(){
       try {
-        const res = await fetch("/api/pedidos", { cache: "no-store" });
+        const res = await fetch(`${BACKEND_URL}/api/pedidos`, { cache: "no-store" });
         const pedidos = await res.json();
         const tbody = document.getElementById("listaPedidos");
         tbody.innerHTML = "";
@@ -146,7 +148,6 @@
         });
         pedidosAnteriores = pedidos;
 
-        // Atualiza tabela
         pedidos.forEach(p => {
           const itensTxt = p.itens.map(i => `${i.nome} x${i.quantidade}`).join(", ");
           const tr = document.createElement("tr");
@@ -178,25 +179,22 @@
     }
 
     function notificarPedido(novoPedido){
-      // Notificação visual
       if("Notification" in window && Notification.permission === "granted"){
         new Notification("Novo pedido!", {
           body: `Pedido #${novoPedido.id} de ${novoPedido.cliente?.nome || "Cliente"}`,
           icon: "/icone_pedido.png"
         });
       }
-      // Toca som
       document.getElementById("alertSound").play();
     }
 
-    // Solicita permissão de notificação
     if("Notification" in window && Notification.permission !== "granted"){
       Notification.requestPermission();
     }
 
     async function atualizarStatus(id, novoStatus){
       try {
-        await fetch("/api/pedidos/"+id+"/status", {
+        await fetch(`${BACKEND_URL}/api/pedidos/${id}/status`, {
           method:"PUT",
           headers:{"Content-Type":"application/json"},
           body:JSON.stringify({ status: novoStatus })
@@ -210,7 +208,7 @@
     async function removerPedido(id){
       if(confirm("Deseja excluir este pedido?")){
         try {
-          await fetch("/api/pedidos/"+id, { method:"DELETE" });
+          await fetch(`${BACKEND_URL}/api/pedidos/${id}`, { method:"DELETE" });
           carregarPedidos();
         } catch (err) {
           console.error("Erro ao remover pedido:", err);
@@ -218,12 +216,11 @@
       }
     }
 
-    // Inicialização
     document.addEventListener("DOMContentLoaded", ()=>{
       mostrarSecao("produtos");
       carregarProdutos();
       carregarPedidos();
-      setInterval(carregarPedidos, 5000); // Atualiza pedidos a cada 5 segundos
+      setInterval(carregarPedidos, 5000);
     });
   </script>
 </body>
