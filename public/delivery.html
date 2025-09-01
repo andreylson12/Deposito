@@ -140,7 +140,7 @@
       document.getElementById("totalCarrinho").textContent = "Total: R$ " + moeda(total);
     }
 
-    function finalizarPedido(){
+    async function finalizarPedido(){
       if(carrinho.length===0){ return alert("Carrinho vazio!"); }
 
       const nome = document.getElementById("clienteNome").value;
@@ -151,19 +151,40 @@
 
       const total = carrinho.reduce((s,i)=>s+i.preco*i.quantidade,0);
 
-      // Mostra pagamento PIX com QR fixo
-      if(pagamento === "PIX"){
-        document.getElementById("pagamento").style.display = "block";
-        document.getElementById("pixQrCode").src = "/qrcode_pix.png"; 
-        document.getElementById("pixPayload").textContent = "99 991842200"; 
-        document.getElementById("pixChave").textContent = "99 991842200"; 
-      } else {
-        document.getElementById("pagamento").style.display = "none";
-      }
+      // Cria objeto do pedido para enviar ao backend
+      const pedido = {
+        cliente: { nome, endereco },
+        itens: carrinho.map(i=>({ id:i.id, nome:i.nome, preco:i.preco, quantidade:i.quantidade })),
+        total: total,
+        pagamento: pagamento,
+        pix: pagamento==="PIX",
+        status: "Pendente"
+      };
 
-      alert("Pedido realizado com sucesso! Total: R$ " + moeda(total));
-      carrinho = [];
-      renderCarrinho();
+      try {
+        const res = await fetch("/api/pedidos", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(pedido)
+        });
+        if(!res.ok) throw new Error("Falha ao enviar pedido");
+
+        if(pagamento === "PIX"){
+          document.getElementById("pagamento").style.display = "block";
+          document.getElementById("pixQrCode").src = "/qrcode_pix.png"; 
+          document.getElementById("pixPayload").textContent = "99 991842200"; 
+          document.getElementById("pixChave").textContent = "99 991842200"; 
+        } else {
+          document.getElementById("pagamento").style.display = "none";
+        }
+
+        alert("Pedido realizado com sucesso! Total: R$ " + moeda(total));
+        carrinho = [];
+        renderCarrinho();
+      } catch(err){
+        console.error(err);
+        alert("Erro ao finalizar o pedido. Tente novamente.");
+      }
     }
 
     function consultarStatus(){
