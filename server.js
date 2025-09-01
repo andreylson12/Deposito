@@ -1,41 +1,54 @@
-// servidor.js (ajustado)
+// server.js – versão estável p/ Railway
 const express = require("express");
 const fs = require("fs");
 const path = require("path");
-const QRCode = require("qrcode");
 const { QrCodePix } = require("qrcode-pix");
 const cors = require("cors");
 
 const app = express();
 const PORT = process.env.PORT || 3000;
 
-// --------- MIDDLEWARES ---------
+// ---------- Middlewares ----------
 app.use(express.json());
 
-// ATENÇÃO: sua pasta no repo é "público" (com acento)
-app.use(express.static(path.join(__dirname, "público")));
+// CSP básica (ajuste se usar libs externas diferentes)
+app.use((req, res, next) => {
+  res.setHeader(
+    "Content-Security-Policy",
+    [
+      "default-src 'self'",
+      "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com https://www.gstatic.com",
+      "script-src 'self' 'unsafe-inline' https://translate.googleapis.com https://translate.google.com https://www.gstatic.com",
+      "img-src 'self' data: https://*.gstatic.com https://*.google.com",
+      "frame-src 'self' https://translate.google.com",
+      "connect-src 'self'"
+    ].join("; ")
+  );
+  next();
+});
 
-// CORS (ajuste a origin se tiver outro domínio de front)
-app.use(cors({
-  origin: true,
-  methods: ["GET","POST","PUT","DELETE","OPTIONS"],
-  credentials: true
-}));
+// **ATENÇÃO**: coloque seus HTML/CSS/JS em /public
+app.use(express.static(path.join(__dirname, "public")));
 
-// Healthcheck para testar no navegador
+app.use(
+  cors({
+    origin: true,
+    methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+    credentials: true,
+  })
+);
+
+// Healthcheck
 app.get("/health", (_req, res) => res.json({ ok: true }));
 
+// ---------- "Banco" em arquivo ----------
 const DB_FILE = path.join(__dirname, "db.json");
-
-// =================== CONFIGURAÇÃO PIX ===================
-const chavePix = "99 991842200";        // telefone
-const nomeLoja = "ANDREYLSON SODRE";   // até 25 caracteres
-const cidade   = "SAMBAIBA";           // até 15 caracteres, sem acento
-
-// =================== FUNÇÕES AUXILIARES ===================
 function loadDB() {
   if (!fs.existsSync(DB_FILE)) {
-    fs.writeFileSync(DB_FILE, JSON.stringify({ produtos: [], pedidos: [] }, null, 2));
+    fs.writeFileSync(
+      DB_FILE,
+      JSON.stringify({ produtos: [], pedidos: [] }, null, 2)
+    );
   }
   return JSON.parse(fs.readFileSync(DB_FILE));
 }
@@ -43,9 +56,12 @@ function saveDB(db) {
   fs.writeFileSync(DB_FILE, JSON.stringify(db, null, 2));
 }
 
-// =================== ROTAS ===================
+// ---------- PIX ----------
+const chavePix = "99 991842200";
+const nomeLoja = "ANDREYLSON SODRE";
+const cidade = "SAMBAIBA";
 
-// Chave PIX
+// ---------- Rotas ----------
 app.get("/api/chave-pix", (_req, res) => {
   res.json({ chave: chavePix, nome: nomeLoja, cidade });
 });
@@ -55,6 +71,7 @@ app.get("/api/produtos", (_req, res) => {
   const db = loadDB();
   res.json(db.produtos);
 });
+
 app.post("/api/produtos", (req, res) => {
   const db = loadDB();
   const novo = { ...req.body, id: Date.now() };
@@ -62,10 +79,11 @@ app.post("/api/produtos", (req, res) => {
   saveDB(db);
   res.json(novo);
 });
+
 app.delete("/api/produtos/:id", (req, res) => {
   const db = loadDB();
   const id = parseInt(req.params.id);
-  db.produtos = db.produtos.filter(p => p.id !== id);
+  db.produtos = db.produtos.filter((p) => p.id !== id);
   saveDB(db);
   res.json({ success: true });
 });
@@ -78,7 +96,7 @@ app.get("/api/pix/:valor/:txid?", async (req, res) => {
     if (!Number.isFinite(valor) || valor < 0.01) {
       return res.status(400).json({ error: "Valor inválido (mínimo 0,01)" });
     }
-    const txid = (req.params.txid || ("PIX" + Date.now())).slice(0, 25);
+    const txid = (req.params.txid || "PIX" + Date.now()).slice(0, 25);
 
     const qrCodePix = QrCodePix({
       version: "01",
@@ -86,7 +104,7 @@ app.get("/api/pix/:valor/:txid?", async (req, res) => {
       name: nomeLoja,
       city: cidade,
       transactionId: txid,
-      value: Number(valor.toFixed(2))
+      value: Number(valor.toFixed(2)),
     });
 
     const payload = qrCodePix.payload().replace(/\s+/g, "");
@@ -100,35 +118,39 @@ app.get("/api/pix/:valor/:txid?", async (req, res) => {
   }
 });
 
-// ===== Pedidos (handlers reaproveitáveis para criar alias /pedidos) =====
-function listPedidosHandler(_req, res) {
+// Pedidos
+app.get("/api/pedidos", (_req, res) => {
   const db = loadDB();
   res.json(db.pedidos);
-}
-function getPedidoHandler(req, res) {
+});
+
+app.get("/api/pedidos/:id", (req, res) => {
   const db = loadDB();
   const id = parseInt(req.params.id);
-  const pedido = db.pedidos.find(p => p.id === id);
+  const pedido = db.pedidos.find((p) => p.id === id);
   if (!pedido) return res.status(404).json({ error: "Pedido não encontrado" });
   res.json(pedido);
-}
-async function createPedidoHandler(req, res) {
+});
+
+app.post("/api/pedidos", async (req, res) => {
   const db = loadDB();
   const pedido = { ...req.body, id: Date.now(), status: "Pendente" };
 
   if (Array.isArray(pedido.itens)) {
-    pedido.itens.forEach(item => {
-      const produto = db.produtos.find(p => p.id === item.id);
+    pedido.itens.forEach((item) => {
+      const produto = db.produtos.find((p) => p.id === item.id);
       if (produto) {
         produto.estoque -= item.quantidade;
         if (produto.estoque < 0) produto.estoque = 0;
       }
     });
   }
+
   try {
     const rawTotal = String(pedido.total).replace(",", ".");
     const valor = Number(rawTotal);
-    if (!Number.isFinite(valor) || valor < 0.01) throw new Error("Valor do pedido inválido");
+    if (!Number.isFinite(valor) || valor < 0.01)
+      throw new Error("Valor do pedido inválido");
 
     const txid = ("PED" + pedido.id).slice(0, 25);
     const qrCodePix = QrCodePix({
@@ -137,14 +159,14 @@ async function createPedidoHandler(req, res) {
       name: nomeLoja,
       city: cidade,
       transactionId: txid,
-      value: Number(valor.toFixed(2))
+      value: Number(valor.toFixed(2)),
     });
 
     pedido.pix = {
       payload: qrCodePix.payload().replace(/\s+/g, ""),
       qrCodeImage: await qrCodePix.base64(),
       txid,
-      chave: chavePix
+      chave: chavePix,
     };
   } catch (err) {
     console.error("Erro ao gerar PIX do pedido:", err);
@@ -154,39 +176,25 @@ async function createPedidoHandler(req, res) {
   db.pedidos.push(pedido);
   saveDB(db);
   res.json(pedido);
-}
-function updatePedidoStatusHandler(req, res) {
+});
+
+app.put("/api/pedidos/:id/status", (req, res) => {
   const db = loadDB();
   const id = parseInt(req.params.id);
-  const pedido = db.pedidos.find(p => p.id === id);
+  const pedido = db.pedidos.find((p) => p.id === id);
   if (!pedido) return res.status(404).json({ error: "Pedido não encontrado" });
   pedido.status = req.body.status || pedido.status;
   saveDB(db);
   res.json(pedido);
-}
-function deletePedidoHandler(req, res) {
+});
+
+app.delete("/api/pedidos/:id", (req, res) => {
   const db = loadDB();
   const id = parseInt(req.params.id);
-  db.pedidos = db.pedidos.filter(p => p.id !== id);
+  db.pedidos = db.pedidos.filter((p) => p.id !== id);
   saveDB(db);
   res.json({ success: true });
-}
-
-// Rotas oficiais da API
-app.get("/api/pedidos", listPedidosHandler);
-app.get("/api/pedidos/:id", getPedidoHandler);
-app.post("/api/pedidos", createPedidoHandler);
-app.put("/api/pedidos/:id/status", updatePedidoStatusHandler);
-app.delete("/api/pedidos/:id", deletePedidoHandler);
-
-// ALIASES para compatibilidade (/pedidos também funciona)
-app.get("/pedidos", listPedidosHandler);
-app.get("/pedidos/:id", getPedidoHandler);
-app.post("/pedidos", createPedidoHandler);
-app.put("/pedidos/:id/status", updatePedidoStatusHandler);
-app.delete("/pedidos/:id", deletePedidoHandler);
-
-// =================== INÍCIO DO SERVIDOR ===================
-app.listen(PORT, "0.0.0.0", () => {
-  console.log(`Servidor rodando na porta ${PORT}`);
 });
+
+// ---------- Start ----------
+app.listen(PORT, "0.0.0.0
