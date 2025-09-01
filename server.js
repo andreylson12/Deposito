@@ -1,7 +1,7 @@
 const express = require("express");
 const fs = require("fs");
 const path = require("path");
-const QRCode = require("qrcode");
+const QRCode = require("qrcode");           // (não é usado diretamente, mas pode deixar)
 const { QrCodePix } = require("qrcode-pix");
 
 const app = express();
@@ -13,10 +13,11 @@ app.use(express.static(path.join(__dirname, "public")));
 const DB_FILE = path.join(__dirname, "db.json");
 
 // =================== CONFIGURAÇÃO PIX ===================
+// Use UMA chave válida: CPF sem pontos/traço OU sua chave aleatória real.
+// Se quiser usar CPF: const chavePix = "61144602351";
 const chavePix = "2b3f0e72-5970-4c77-8c38-0e3fadcae5b9";  // chave aleatória
 const nomeLoja = "ANDREYLSON SODRE";                      // máx 25 caracteres
-const cidade   = "SAMBAIBA";                              // máx 15 caracteres
-
+const cidade   = "SAMBAIBA";                              // máx 15 caracteres, sem acento
 
 // =================== FUNÇÕES AUXILIARES ===================
 function loadDB() {
@@ -53,11 +54,19 @@ app.delete("/api/produtos/:id", (req, res) => {
   res.json({ success: true });
 });
 
-// =================== ROTAS PIX ===================
+// =================== ROTA PIX (GERAÇÃO DIRETA) ===================
 app.get("/api/pix/:valor/:txid?", async (req, res) => {
   try {
-    const valor = parseFloat(req.params.valor);
-    const txid = req.params.txid || "ADEGA" + Date.now();
+    // aceita "10,50" ou "10.50"
+    const raw = String(req.params.valor).replace(",", ".");
+    const valor = Number(raw);
+
+    if (!Number.isFinite(valor) || valor < 0.01) {
+      return res.status(400).json({ error: "Valor inválido (mínimo 0,01)" });
+    }
+
+    // txid até 25 caracteres (regra do BACEN)
+    const txid = (req.params.txid || ("ADEGA" + Date.now())).slice(0, 25);
 
     const qrCodePix = QrCodePix({
       version: "01",
@@ -65,12 +74,14 @@ app.get("/api/pix/:valor/:txid?", async (req, res) => {
       name: nomeLoja,
       city: cidade,
       transactionId: txid,
-      value: valor
+      value: Number(valor.toFixed(2))
     });
 
-    const payload = qrCodePix.payload();
+    // payload SEM espaços/linhas
+    const payload = qrCodePix.payload().replace(/\s+/g, "");
     const qrCodeImage = await qrCodePix.base64();
 
+    res.set("Cache-Control", "no-store");
     res.json({ payload, qrCodeImage, txid });
   } catch (err) {
     console.error("Erro ao gerar PIX:", err);
@@ -100,34 +111,46 @@ app.post("/api/pedidos", async (req, res) => {
   pedido.id = Date.now();
   pedido.status = "Pendente";
 
-  // Atualizar estoque
-  pedido.itens.forEach(item => {
-    const produto = db.produtos.find(p => p.id === item.id);
-    if (produto) {
-      produto.estoque -= item.quantidade;
-      if (produto.estoque < 0) produto.estoque = 0;
-    }
-  });
+  // Atualizar estoque (se houver itens)
+  if (Array.isArray(pedido.itens)) {
+    pedido.itens.forEach(item => {
+      const produto = db.produtos.find(p => p.id === item.id);
+      if (produto) {
+        produto.estoque -= item.quantidade;
+        if (produto.estoque < 0) produto.estoque = 0;
+      }
+    });
+  }
 
   // Gera PIX junto com o pedido
   try {
+    // aceita "10,50" vindo do front
+    const rawTotal = String(pedido.total).replace(",", ".");
+    const valor = Number(rawTotal);
+
+    if (!Number.isFinite(valor) || valor < 0.01) {
+      throw new Error("Valor do pedido inválido para PIX");
+    }
+
+    const txid = ("PED" + pedido.id).slice(0, 25);
+
     const qrCodePix = QrCodePix({
       version: "01",
       key: chavePix,
       name: nomeLoja,
       city: cidade,
-      transactionId: "PED" + pedido.id,
-      value: pedido.total
+      transactionId: txid,
+      value: Number(valor.toFixed(2))
     });
 
     pedido.pix = {
-      payload: qrCodePix.payload(),
+      payload: qrCodePix.payload().replace(/\s+/g, ""),
       qrCodeImage: await qrCodePix.base64(),
-      txid: "PED" + pedido.id
+      txid
     };
   } catch (err) {
-    console.error("Erro ao gerar PIX:", err);
-    pedido.pix = null;
+    console.error("Erro ao gerar PIX do pedido:", err);
+    pedido.pix = null; // mantém o pedido, mas sem PIX gerado
   }
 
   db.pedidos.push(pedido);
@@ -159,7 +182,3 @@ app.delete("/api/pedidos/:id", (req, res) => {
 app.listen(PORT, () => {
   console.log(`Servidor rodando em http://localhost:${PORT}`);
 });
-
-
-
-
