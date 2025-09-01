@@ -18,6 +18,7 @@
     table { width:100%; border-collapse:collapse; margin-bottom:10px; }
     th, td { padding:8px; border-bottom:1px solid #ddd; text-align:center; }
     .btn-finalizar { width:100%; padding:12px; background:#3498db; color:#fff; border:none; border-radius:6px; font-size:16px; cursor:pointer; }
+    .btn-finalizar[disabled] { opacity:.65; cursor:not-allowed; }
     .btn-finalizar:hover { background:#2980b9; }
     #pagamento { text-align:center; margin:20px; display:none; }
     #pagamento img { width:220px; margin:10px auto; display:block; }
@@ -59,7 +60,7 @@
         <option value="Cartão">Cartão</option>
       </select>
 
-      <button class="btn-finalizar" onclick="finalizarPedido()">Finalizar Pedido</button>
+      <button id="btnFinalizar" class="btn-finalizar" onclick="finalizarPedido()">Finalizar Pedido</button>
     </section>
 
     <!-- PAGAMENTO PIX -->
@@ -90,31 +91,39 @@
     // Carregar produtos do backend
     async function carregarProdutos(){
       try {
-        const res = await fetch("/api/produtos");
+        const res = await fetch("/api/produtos", { cache: "no-store" });
+        if(!res.ok) throw new Error("Falha ao buscar produtos");
         const produtos = await res.json();
         const container = document.getElementById("listaProdutos");
         container.innerHTML = "";
-        produtos.filter(p=>p.estoque>0).forEach(p=>{
+        produtos.filter(p=>Number(p.estoque)>0).forEach(p=>{
+          const imagem = p.imagem || "https://via.placeholder.com/300x300?text=Produto";
           const div = document.createElement("div");
           div.className = "card";
           div.innerHTML = `
-            <img src="${p.imagem}" alt="${p.nome}">
+            <img src="${imagem}" alt="${p.nome}">
             <h3>${p.nome}</h3>
             <p>R$ ${moeda(p.preco)}</p>
             <p>Estoque: ${p.estoque}</p>
-            <button onclick="adicionarCarrinho(${p.id}, '${p.nome}', ${p.preco})">Adicionar</button>
+            <button onclick="adicionarCarrinho(${p.id}, '${p.nome.replace(/'/g,"&#39;")}', ${Number(p.preco)})">Adicionar</button>
           `;
           container.appendChild(div);
         });
       } catch (err) {
         console.error("Erro ao carregar produtos:", err);
+        alert("Não foi possível carregar os produtos. Tente novamente.");
       }
     }
 
     function adicionarCarrinho(id, nome, preco){
+      const precoNum = Number(preco);
+      if (!Number.isFinite(precoNum)) {
+        alert("Preço inválido para o item.");
+        return;
+      }
       const item = carrinho.find(i=>i.id===id);
       if(item){ item.quantidade++; }
-      else { carrinho.push({id, nome, preco, quantidade:1}); }
+      else { carrinho.push({id, nome, preco: precoNum, quantidade:1}); }
       renderCarrinho();
     }
 
@@ -140,25 +149,31 @@
     async function finalizarPedido(){
       if(carrinho.length===0){ return alert("Carrinho vazio!"); }
 
-      const nome = document.getElementById("clienteNome").value;
-      const endereco = document.getElementById("clienteEndereco").value;
-      const pagamento = document.getElementById("clientePagamento").value;
+      const btn = document.getElementById("btnFinalizar");
+      btn.disabled = true;
 
-      if(!nome || !endereco) return alert("Preencha seu nome e endereço.");
+      try{
+        const nome = document.getElementById("clienteNome").value.trim();
+        const endereco = document.getElementById("clienteEndereco").value.trim();
+        const pagamento = document.getElementById("clientePagamento").value;
 
-      const total = carrinho.reduce((s,i)=>s+i.preco*i.quantidade,0);
+        if(!nome || !endereco){
+          alert("Preencha seu nome e endereço.");
+          return;
+        }
 
-      const pedido = {
-        id: Date.now(),
-        cliente: { nome, endereco },
-        itens: carrinho.map(i=>({ id:i.id, nome:i.nome, preco:i.preco, quantidade:i.quantidade })),
-        total: total,
-        pagamento: pagamento,
-        pix: pagamento==="PIX",
-        status: "Pendente"
-      };
+        const total = carrinho.reduce((s,i)=>s + (i.preco*i.quantidade), 0);
 
-      try {
+        const pedido = {
+          id: Date.now(),
+          cliente: { nome, endereco },
+          itens: carrinho.map(i=>({ id:i.id, nome:i.nome, preco:i.preco, quantidade:i.quantidade })),
+          total: Number(total.toFixed(2)),
+          pagamento,
+          pix: pagamento==="PIX",
+          status: "Pendente"
+        };
+
         const res = await fetch("/api/pedidos", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -176,6 +191,9 @@
           document.getElementById("pixChave").textContent = salvo.pix.chave || "99 991842200";
         } else {
           document.getElementById("pagamento").style.display = "none";
+          document.getElementById("pixQrCode").src = "/qrcode_pix.png";
+          document.getElementById("pixPayload").textContent = "99 991842200";
+          document.getElementById("pixChave").textContent = "99 991842200";
         }
 
         alert("Pedido realizado com sucesso!\nID do pedido: " + salvo.id + "\nTotal: R$ " + moeda(total));
@@ -184,6 +202,8 @@
       } catch(err){
         console.error(err);
         alert("Erro ao finalizar o pedido. Tente novamente.");
+      } finally {
+        btn.disabled = false;
       }
     }
 
