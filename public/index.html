@@ -14,13 +14,14 @@
     section{ display:none; }
     section.active{ display:block; }
     table{ border-collapse:collapse; width:100%; background:#2c3e50; }
-    th, td{ padding:8px; border:1px solid #444; }
+    th, td{ padding:8px; border:1px solid #444; vertical-align: top; text-align: center; }
     input, button, select{ padding:8px; margin:5px 0; border-radius:6px; border:none; }
     button{ background:#27ae60; color:#fff; cursor:pointer; }
     button:hover{ background:#219150; }
     .btn-remover{ background:#e74c3c; }
     .btn-remover:hover{ background:#c0392b; }
     .badge{ display:inline-block; padding:2px 8px; border-radius:999px; font-size:12px; background:#111; }
+    img.qr { border:1px solid #555; margin:5px 0; }
   </style>
 </head>
 <body>
@@ -132,7 +133,18 @@
             <td>${p.id}</td>
             <td>${itensTxt}</td>
             <td>R$ ${moeda(p.total)}</td>
-            <td><span class="badge">${p.pagamento}</span></td>
+            <td>
+              ${
+                p.pix 
+                  ? `
+                    <div>
+                      <img class="qr" src="${p.pix.qrCodeImage}" width="100"><br>
+                      <button onclick="copiarPix('${p.pix.payload}')">Copiar PIX</button>
+                    </div>
+                  `
+                  : `<span class="badge">Sem PIX</span>`
+              }
+            </td>
             <td>
               <select onchange="atualizarStatus(${p.id}, this.value)">
                 <option ${p.status==="Pendente"?"selected":""}>Pendente</option>
@@ -164,6 +176,12 @@
         await fetch("/api/pedidos/"+id, { method:"DELETE" });
         carregarPedidos();
       }
+    }
+
+    function copiarPix(payload){
+      navigator.clipboard.writeText(payload).then(()=>{
+        alert("Código PIX copiado!");
+      });
     }
 
     // Inicialização
