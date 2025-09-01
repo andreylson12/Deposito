@@ -1,14 +1,29 @@
+// servidor.js (ajustado)
 const express = require("express");
 const fs = require("fs");
 const path = require("path");
 const QRCode = require("qrcode");
 const { QrCodePix } = require("qrcode-pix");
+const cors = require("cors");
 
 const app = express();
 const PORT = process.env.PORT || 3000;
 
+// --------- MIDDLEWARES ---------
 app.use(express.json());
-app.use(express.static(path.join(__dirname, "public")));
+
+// ATENÇÃO: sua pasta no repo é "público" (com acento)
+app.use(express.static(path.join(__dirname, "público")));
+
+// CORS (ajuste a origin se tiver outro domínio de front)
+app.use(cors({
+  origin: true,
+  methods: ["GET","POST","PUT","DELETE","OPTIONS"],
+  credentials: true
+}));
+
+// Healthcheck para testar no navegador
+app.get("/health", (_req, res) => res.json({ ok: true }));
 
 const DB_FILE = path.join(__dirname, "db.json");
 
@@ -24,37 +39,29 @@ function loadDB() {
   }
   return JSON.parse(fs.readFileSync(DB_FILE));
 }
-
 function saveDB(db) {
   fs.writeFileSync(DB_FILE, JSON.stringify(db, null, 2));
 }
 
 // =================== ROTAS ===================
 
-// Rota para exibir chave PIX
-app.get("/api/chave-pix", (req, res) => {
-  res.json({
-    chave: chavePix,
-    nome: nomeLoja,
-    cidade: cidade
-  });
+// Chave PIX
+app.get("/api/chave-pix", (_req, res) => {
+  res.json({ chave: chavePix, nome: nomeLoja, cidade });
 });
 
-// Rotas de produtos
-app.get("/api/produtos", (req, res) => {
+// Produtos
+app.get("/api/produtos", (_req, res) => {
   const db = loadDB();
   res.json(db.produtos);
 });
-
 app.post("/api/produtos", (req, res) => {
   const db = loadDB();
-  const novo = req.body;
-  novo.id = Date.now();
+  const novo = { ...req.body, id: Date.now() };
   db.produtos.push(novo);
   saveDB(db);
   res.json(novo);
 });
-
 app.delete("/api/produtos/:id", (req, res) => {
   const db = loadDB();
   const id = parseInt(req.params.id);
@@ -63,16 +70,14 @@ app.delete("/api/produtos/:id", (req, res) => {
   res.json({ success: true });
 });
 
-// Rota PIX (gera QR Code com valor e TXID)
+// PIX com valor e TXID
 app.get("/api/pix/:valor/:txid?", async (req, res) => {
   try {
     const raw = String(req.params.valor).replace(",", ".");
     const valor = Number(raw);
-
     if (!Number.isFinite(valor) || valor < 0.01) {
       return res.status(400).json({ error: "Valor inválido (mínimo 0,01)" });
     }
-
     const txid = (req.params.txid || ("PIX" + Date.now())).slice(0, 25);
 
     const qrCodePix = QrCodePix({
@@ -95,27 +100,21 @@ app.get("/api/pix/:valor/:txid?", async (req, res) => {
   }
 });
 
-// Rotas de pedidos
-app.get("/api/pedidos", (req, res) => {
+// ===== Pedidos (handlers reaproveitáveis para criar alias /pedidos) =====
+function listPedidosHandler(_req, res) {
   const db = loadDB();
   res.json(db.pedidos);
-});
-
-app.get("/api/pedidos/:id", (req, res) => {
+}
+function getPedidoHandler(req, res) {
   const db = loadDB();
   const id = parseInt(req.params.id);
   const pedido = db.pedidos.find(p => p.id === id);
-  if (!pedido) {
-    return res.status(404).json({ error: "Pedido não encontrado" });
-  }
+  if (!pedido) return res.status(404).json({ error: "Pedido não encontrado" });
   res.json(pedido);
-});
-
-app.post("/api/pedidos", async (req, res) => {
+}
+async function createPedidoHandler(req, res) {
   const db = loadDB();
-  const pedido = req.body;
-  pedido.id = Date.now();
-  pedido.status = "Pendente";
+  const pedido = { ...req.body, id: Date.now(), status: "Pendente" };
 
   if (Array.isArray(pedido.itens)) {
     pedido.itens.forEach(item => {
@@ -126,14 +125,12 @@ app.post("/api/pedidos", async (req, res) => {
       }
     });
   }
-
   try {
     const rawTotal = String(pedido.total).replace(",", ".");
     const valor = Number(rawTotal);
     if (!Number.isFinite(valor) || valor < 0.01) throw new Error("Valor do pedido inválido");
 
     const txid = ("PED" + pedido.id).slice(0, 25);
-
     const qrCodePix = QrCodePix({
       version: "01",
       key: chavePix,
@@ -157,28 +154,39 @@ app.post("/api/pedidos", async (req, res) => {
   db.pedidos.push(pedido);
   saveDB(db);
   res.json(pedido);
-});
-
-app.put("/api/pedidos/:id/status", (req, res) => {
+}
+function updatePedidoStatusHandler(req, res) {
   const db = loadDB();
   const id = parseInt(req.params.id);
   const pedido = db.pedidos.find(p => p.id === id);
   if (!pedido) return res.status(404).json({ error: "Pedido não encontrado" });
-
   pedido.status = req.body.status || pedido.status;
   saveDB(db);
   res.json(pedido);
-});
-
-app.delete("/api/pedidos/:id", (req, res) => {
+}
+function deletePedidoHandler(req, res) {
   const db = loadDB();
   const id = parseInt(req.params.id);
   db.pedidos = db.pedidos.filter(p => p.id !== id);
   saveDB(db);
   res.json({ success: true });
-});
+}
 
-// =================== INICIO DO SERVIDOR ===================
-app.listen(PORT, () => {
-  console.log(`Servidor rodando em http://localhost:${PORT}`);
+// Rotas oficiais da API
+app.get("/api/pedidos", listPedidosHandler);
+app.get("/api/pedidos/:id", getPedidoHandler);
+app.post("/api/pedidos", createPedidoHandler);
+app.put("/api/pedidos/:id/status", updatePedidoStatusHandler);
+app.delete("/api/pedidos/:id", deletePedidoHandler);
+
+// ALIASES para compatibilidade (/pedidos também funciona)
+app.get("/pedidos", listPedidosHandler);
+app.get("/pedidos/:id", getPedidoHandler);
+app.post("/pedidos", createPedidoHandler);
+app.put("/pedidos/:id/status", updatePedidoStatusHandler);
+app.delete("/pedidos/:id", deletePedidoHandler);
+
+// =================== INÍCIO DO SERVIDOR ===================
+app.listen(PORT, "0.0.0.0", () => {
+  console.log(`Servidor rodando na porta ${PORT}`);
 });
