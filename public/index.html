@@ -153,18 +153,26 @@
     }
 
     async function atualizarStatus(id, novoStatus){
-      await fetch("/api/pedidos/"+id+"/status", {
-        method:"PUT",
-        headers:{"Content-Type":"application/json"},
-        body:JSON.stringify({ status: novoStatus })
-      });
-      carregarPedidos();
+      try {
+        await fetch("/api/pedidos/"+id+"/status", {
+          method:"PUT",
+          headers:{"Content-Type":"application/json"},
+          body:JSON.stringify({ status: novoStatus })
+        });
+        carregarPedidos();
+      } catch (err) {
+        console.error("Erro ao atualizar status:", err);
+      }
     }
 
     async function removerPedido(id){
       if(confirm("Deseja excluir este pedido?")){
-        await fetch("/api/pedidos/"+id, { method:"DELETE" });
-        carregarPedidos();
+        try {
+          await fetch("/api/pedidos/"+id, { method:"DELETE" });
+          carregarPedidos();
+        } catch (err) {
+          console.error("Erro ao remover pedido:", err);
+        }
       }
     }
 
@@ -173,9 +181,8 @@
       mostrarSecao("produtos");
       carregarProdutos();
       carregarPedidos();
-      setInterval(carregarPedidos, 5);
+      setInterval(carregarPedidos, 5000); // Atualiza pedidos a cada 5 segundos
     });
   </script>
 </body>
 </html>
-
