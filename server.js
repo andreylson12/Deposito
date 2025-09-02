@@ -349,6 +349,22 @@ app.delete("/api/pedidos/:id", (req, res) => {
   res.json({ success: true });
 });
 
+/* ---------------- Debug DB (protegido por token) ---------------- */
+const DEBUG_TOKEN = process.env.DEBUG_TOKEN || "segredo123"; // defina no Railway
+
+app.get("/api/debug-db", (req, res) => {
+  const token = req.query.token;
+  if (token !== DEBUG_TOKEN) {
+    return res.status(403).json({ error: "Acesso negado. Forneça o token correto." });
+  }
+  try {
+    const db = loadDB();
+    res.json(db);
+  } catch (e) {
+    res.status(500).json({ error: "Erro ao ler DB", details: e.message });
+  }
+});
+
 /* --------------------------------- Start ------------------------------------ */
 app.listen(PORT, "0.0.0.0", () => {
   console.log(`Servidor rodando na porta ${PORT}`);
