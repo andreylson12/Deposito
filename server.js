@@ -12,6 +12,25 @@ try { webpush = require("web-push"); } catch { /* opcional */ }
 const app = express();
 const PORT = process.env.PORT || 3000;
 
+/* ------------------------------- Basic Auth --------------------------------- */
+// Credenciais e opções
+const ADMIN_USER = process.env.ADMIN_USER || "admin";
+const ADMIN_PASS = process.env.ADMIN_PASS || "senha123";
+const ADMIN_REALM = "Adega Admin";
+const PROTECT_API = (process.env.ADMIN_PROTECT_API ?? "true").toLowerCase() !== "false";
+
+// Middleware simples de Basic Auth
+function basicAuth(req, res, next) {
+  const h = req.headers.authorization || "";
+  const [type, b64] = h.split(" ");
+  if (type === "Basic" && b64) {
+    const [user, pass] = Buffer.from(b64, "base64").toString().split(":");
+    if (user === ADMIN_USER && pass === ADMIN_PASS) return next();
+  }
+  res.set("WWW-Authenticate", `Basic realm="${ADMIN_REALM}", charset="UTF-8"`);
+  return res.status(401).send("Autenticação requerida");
+}
+
 /* -------------------------------- Middlewares -------------------------------- */
 // aceita até ~5MB de JSON (para restore)
 app.use(express.json({ limit: "5mb" }));
@@ -24,11 +43,24 @@ app.use(
 );
 
 /* ------------------------------ Arquivos estáticos --------------------------- */
-app.use(express.static(path.join(__dirname, "public")));
+/**
+ * MUITO IMPORTANTE: desabilitamos o 'index' automático do express.static
+ * para garantir que /index.html NÃO seja servido sem passar no basicAuth.
+ * Assim, roteamos /, /index, /index.html manualmente (com auth).
+ */
+app.use(
+  express.static(path.join(__dirname, "public"), {
+    index: false, // impede servir index.html automaticamente
+  })
+);
 
-app.get(["/", "/index", "/index.html"], (_req, res) => {
+/* -------------------------- Rotas de páginas (UI) ---------------------------- */
+// 🔐 Painel administrativo protegido por senha
+app.get(["/", "/index", "/index.html"], basicAuth, (_req, res) => {
   res.sendFile(path.join(__dirname, "public", "index.html"));
 });
+
+// Página pública (sem senha)
 app.get(["/delivery", "/delivery.html"], (_req, res) => {
   res.sendFile(path.join(__dirname, "public", "delivery.html"));
 });
@@ -125,11 +157,13 @@ async function sendPushToAll(title, body, data = {}) {
 }
 
 /* --------------------------- Rotas de Push (opcional) ----------------------- */
-app.get("/api/push/public-key", (_req, res) => {
+const maybeAuth = PROTECT_API ? [basicAuth] : []; // helper pra condicionar proteção
+
+app.get("/api/push/public-key", ...maybeAuth, (_req, res) => {
   res.json({ publicKey: VAPID_PUBLIC || "" });
 });
 
-app.post("/api/push/subscribe", (req, res) => {
+app.post("/api/push/subscribe", ...maybeAuth, (req, res) => {
   try {
     const sub = req.body; // { endpoint, keys:{p256dh, auth} }
     if (!sub?.endpoint) return res.status(400).json({ error: "assinatura inválida" });
@@ -146,7 +180,7 @@ app.post("/api/push/subscribe", (req, res) => {
   }
 });
 
-app.post("/api/push/unsubscribe", (req, res) => {
+app.post("/api/push/unsubscribe", ...maybeAuth, (req, res) => {
   try {
     const { endpoint } = req.body || {};
     if (!endpoint) return res.status(400).json({ error: "endpoint ausente" });
@@ -186,11 +220,11 @@ async function sendTelegramMessage(text) {
 }
 
 /* -------------------------------- API PIX ----------------------------------- */
-app.get("/api/chave-pix", (_req, res) => {
+app.get("/api/chave-pix", ...maybeAuth, (_req, res) => {
   res.json({ chave: chavePix, nome: nomeLoja, cidade });
 });
 
-app.get("/api/pix/:valor/:txid?", async (req, res) => {
+app.get("/api/pix/:valor/:txid?", ...maybeAuth, async (req, res) => {
   try {
     const raw = String(req.params.valor).replace(",", ".");
     const valor = Number(raw);
@@ -220,12 +254,12 @@ app.get("/api/pix/:valor/:txid?", async (req, res) => {
 });
 
 /* ------------------------------- Produtos ----------------------------------- */
-app.get("/api/produtos", (_req, res) => {
+app.get("/api/produtos", ...maybeAuth, (_req, res) => {
   const db = loadDB();
   res.json(db.produtos);
 });
 
-app.post("/api/produtos", (req, res) => {
+app.post("/api/produtos", ...maybeAuth, (req, res) => {
   const db = loadDB();
   const novo = { ...req.body, id: Date.now() };
   db.produtos.push(novo);
@@ -233,7 +267,7 @@ app.post("/api/produtos", (req, res) => {
   res.json(novo);
 });
 
-app.delete("/api/produtos/:id", (req, res) => {
+app.delete("/api/produtos/:id", ...maybeAuth, (req, res) => {
   const db = loadDB();
   const id = Number(req.params.id);
   db.produtos = db.produtos.filter((p) => p.id !== id);
@@ -242,12 +276,12 @@ app.delete("/api/produtos/:id", (req, res) => {
 });
 
 /* -------------------------------- Pedidos ----------------------------------- */
-app.get("/api/pedidos", (_req, res) => {
+app.get("/api/pedidos", ...maybeAuth, (_req, res) => {
   const db = loadDB();
   res.json(db.pedidos);
 });
 
-app.get("/api/pedidos/:id", (req, res) => {
+app.get("/api/pedidos/:id", ...maybeAuth, (req, res) => {
   const db = loadDB();
   const id = Number(req.params.id);
   const pedido = db.pedidos.find((p) => p.id === id);
@@ -255,7 +289,7 @@ app.get("/api/pedidos/:id", (req, res) => {
   res.json(pedido);
 });
 
-app.post("/api/pedidos", async (req, res) => {
+app.post("/api/pedidos", ...maybeAuth, async (req, res) => {
   const db = loadDB();
   const pedido = { ...req.body, id: Date.now(), status: "Pendente" };
 
@@ -328,7 +362,7 @@ app.post("/api/pedidos", async (req, res) => {
   res.json(pedido);
 });
 
-app.put("/api/pedidos/:id/status", (req, res) => {
+app.put("/api/pedidos/:id/status", ...maybeAuth, (req, res) => {
   const db = loadDB();
   const id = Number(req.params.id);
   const pedido = db.pedidos.find((p) => p.id === id);
@@ -342,7 +376,7 @@ app.put("/api/pedidos/:id/status", (req, res) => {
   res.json(pedido);
 });
 
-app.delete("/api/pedidos/:id", (req, res) => {
+app.delete("/api/pedidos/:id", ...maybeAuth, (req, res) => {
   const db = loadDB();
   const id = Number(req.params.id);
   db.pedidos = db.pedidos.filter((p) => p.id !== id);
@@ -354,7 +388,7 @@ app.delete("/api/pedidos/:id", (req, res) => {
 const DEBUG_TOKEN = process.env.DEBUG_TOKEN || "segredo123"; // defina no Railway
 
 // GET /api/debug-db?token=...
-app.get("/api/debug-db", (req, res) => {
+app.get("/api/debug-db", ...maybeAuth, (req, res) => {
   const token = req.query.token;
   if (token !== DEBUG_TOKEN) {
     return res.status(403).json({ error: "Acesso negado. Forneça o token correto." });
@@ -368,7 +402,7 @@ app.get("/api/debug-db", (req, res) => {
 });
 
 // GET /api/backup?token=...
-app.get("/api/backup", (req, res) => {
+app.get("/api/backup", ...maybeAuth, (req, res) => {
   const token = req.query.token;
   if (token !== DEBUG_TOKEN) {
     return res.status(403).json({ error: "Acesso negado. Token inválido." });
@@ -386,7 +420,7 @@ app.get("/api/backup", (req, res) => {
 
 // POST /api/restore?token=...&mode=replace|merge
 // Body deve ser o próprio conteúdo JSON do db (produtos, pedidos, pushSubs)
-app.post("/api/restore", (req, res) => {
+app.post("/api/restore", ...maybeAuth, (req, res) => {
   const token = req.query.token;
   if (token !== DEBUG_TOKEN) {
     return res.status(403).json({ error: "Acesso negado. Token inválido." });
