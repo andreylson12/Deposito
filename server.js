@@ -34,45 +34,64 @@ app.get(["/delivery", "/delivery.html"], (_req, res) => {
 
 app.get("/health", (_req, res) => res.json({ ok: true }));
 
-/* -------------------------------- "Banco" em arquivo ------------------------ */
-const DB_FILE = path.join(__dirname, "db.json");
+/* ------------------------------- Banco em arquivo ---------------------------- */
+// Use DB_FILE=/data/db.json no Railway (com Volume montado em /data)
+const DB_FILE = process.env.DB_FILE || path.join(__dirname, "db.json");
+
+// Garante que a pasta do banco existe
+const dbDir = path.dirname(DB_FILE);
+if (!fs.existsSync(dbDir)) {
+  fs.mkdirSync(dbDir, { recursive: true });
+}
+
 function ensureDBShape(db) {
-  // garante sempre os arrays
+  db = db && typeof db === "object" ? db : {};
   db.produtos = Array.isArray(db.produtos) ? db.produtos : [];
-  db.pedidos = Array.isArray(db.pedidos) ? db.pedidos : [];
+  db.pedidos  = Array.isArray(db.pedidos)  ? db.pedidos  : [];
   db.pushSubs = Array.isArray(db.pushSubs) ? db.pushSubs : [];
   return db;
 }
+
 function loadDB() {
-  if (!fs.existsSync(DB_FILE)) {
-    fs.writeFileSync(
-      DB_FILE,
-      JSON.stringify({ produtos: [], pedidos: [], pushSubs: [] }, null, 2)
-    );
+  try {
+    if (!fs.existsSync(DB_FILE)) {
+      const blank = ensureDBShape({});
+      fs.writeFileSync(DB_FILE, JSON.stringify(blank, null, 2));
+      return blank;
+    }
+    const raw = fs.readFileSync(DB_FILE, "utf8");
+    const parsed = JSON.parse(raw);
+    return ensureDBShape(parsed);
+  } catch (err) {
+    console.warn("[db] erro ao ler/parsear, recriando arquivo:", err?.message);
+    const blank = ensureDBShape({});
+    fs.writeFileSync(DB_FILE, JSON.stringify(blank, null, 2));
+    return blank;
   }
-  const raw = fs.readFileSync(DB_FILE);
-  return ensureDBShape(JSON.parse(raw));
 }
+
 function saveDB(db) {
-  fs.writeFileSync(DB_FILE, JSON.stringify(ensureDBShape(db), null, 2));
+  try {
+    fs.writeFileSync(DB_FILE, JSON.stringify(ensureDBShape(db), null, 2));
+  } catch (err) {
+    console.error("[db] erro ao salvar:", err?.message);
+  }
 }
 
 /* -------------------------------- Config PIX -------------------------------- */
 const chavePix = "99 991842200";
 const nomeLoja = "ANDREYLSON SODRE";
-const cidade = "SAMBAIBA";
+const cidade   = "SAMBAIBA";
 
 /* ----------------------------- Push Web (opcional) --------------------------- */
-const VAPID_PUBLIC = process.env.VAPID_PUBLIC_KEY || "";
+const VAPID_PUBLIC  = process.env.VAPID_PUBLIC_KEY  || "";
 const VAPID_PRIVATE = process.env.VAPID_PRIVATE_KEY || "";
-const VAPID_SUBJECT = process.env.VAPID_SUBJECT || "mailto:suporte@exemplo.com";
+const VAPID_SUBJECT = process.env.VAPID_SUBJECT     || "mailto:suporte@exemplo.com";
 
 if (webpush && VAPID_PUBLIC && VAPID_PRIVATE) {
   webpush.setVapidDetails(VAPID_SUBJECT, VAPID_PUBLIC, VAPID_PRIVATE);
 } else if (!VAPID_PUBLIC || !VAPID_PRIVATE) {
-  console.warn(
-    "[web-push] sem VAPID_PUBLIC_KEY/VAPID_PRIVATE_KEY — recurso de push web ficará inativo (tudo bem)."
-  );
+  console.warn("[web-push] sem VAPID_PUBLIC_KEY/VAPID_PRIVATE_KEY — recurso de push web ficará inativo.");
 }
 
 /** Envia notificação web para todos inscritos; ignora se não houver VAPID/chaves */
@@ -148,7 +167,7 @@ const _fetch = (...args) =>
     : import("node-fetch").then((m) => m.default(...args)));
 
 const TG_TOKEN = process.env.TELEGRAM_BOT_TOKEN || "";
-const TG_CHAT = process.env.TELEGRAM_CHAT_ID || "";
+const TG_CHAT  = process.env.TELEGRAM_CHAT_ID    || "";
 
 /** Envia mensagem de texto ao Telegram; ignora se não configurado */
 async function sendTelegramMessage(text) {
@@ -244,7 +263,10 @@ app.post("/api/pedidos", async (req, res) => {
     for (const prod of db.produtos) {
       const item = pedido.itens.find((i) => i.id === prod.id);
       if (item) {
-        prod.estoque = Math.max(0, Number(prod.estoque || 0) - Number(item.quantidade || 0));
+        prod.estoque = Math.max(
+          0,
+          Number(prod.estoque || 0) - Number(item.quantidade || 0)
+        );
       }
     }
   }
