@@ -20,7 +20,6 @@
     #pagamento{text-align:center;margin:20px;display:none}
     #pagamento img{width:220px;margin:10px auto;display:block}
     input,select{width:100%;padding:10px;margin:5px 0;border:1px solid #ccc;border-radius:5px}
-    #pixPayload{font-size:14px;background:#f0f0f0;padding:10px;border-radius:5px;word-break:break-all}
   </style>
 </head>
 <body>
@@ -31,24 +30,30 @@
 
     <section id="carrinho">
       <h2>🛒 Seu Carrinho</h2>
-      <table><thead><tr><th>Produto</th><th>Qtd</th><th>Preço</th><th>Total</th></tr></thead><tbody id="itensCarrinho"></tbody></table>
+      <table>
+        <thead><tr><th>Produto</th><th>Qtd</th><th>Preço</th><th>Total</th></tr></thead>
+        <tbody id="itensCarrinho"></tbody>
+      </table>
       <h3 id="totalCarrinho">Total: R$ 0,00</h3>
 
       <input id="clienteNome" placeholder="Seu Nome" required />
       <input id="clienteEndereco" placeholder="Endereço de entrega" required />
-      <select id="clientePagamento"><option value="PIX">PIX</option><option>Dinheiro</option><option>Cartão</option></select>
+      <select id="clientePagamento">
+        <option value="PIX">PIX</option>
+        <option>Dinheiro</option>
+        <option>Cartão</option>
+      </select>
 
       <button id="btnFinalizar" class="btn-finalizar" onclick="finalizarPedido()">Finalizar Pedido</button>
     </section>
 
+    <!-- PAGAMENTO PIX (sem “copia e cola”; só a chave telefone) -->
     <section id="pagamento">
       <h2>💳 Pagamento via PIX</h2>
       <img id="pixQrCode" src="/qrcode_pix.png" alt="QR Code PIX" />
       <p>Chave PIX (telefone): <strong id="pixChave">99 991842200</strong></p>
-      <p>Copia e Cola PIX:</p>
-      <p id="pixPayload">99 991842200</p>
-      <button class="btn" onclick="copiarPix()">📋 Copiar Código PIX</button>
-      <p id="msgCopiado" style="display:none;color:green">✅ Copiado!</p>
+      <button class="btn" onclick="copiarChave()">📋 Copiar chave PIX</button>
+      <p id="msgCopiado" style="display:none;color:green">✅ Chave copiada!</p>
     </section>
   </main>
 
@@ -60,19 +65,28 @@
       const res = await fetch("/api/produtos", { cache:"no-store" });
       const produtos = await res.json();
       const el = document.getElementById("listaProdutos"); el.innerHTML = "";
-      produtos.filter(p=>Number(p.estoque)>0).forEach(p=>{
-        const img = p.imagem || "https://via.placeholder.com/300x300?text=Produto";
-        const div = document.createElement("div"); div.className="card";
-        div.innerHTML = `<img src="${img}" alt="${p.nome}"><h3>${p.nome}</h3><p>R$ ${moeda(p.preco)}</p><p>Estoque: ${p.estoque}</p>
-        <button class="btn" onclick="adicionar(${p.id}, '${p.nome.replace(/'/g,'&#39;')}', ${Number(p.preco)})">Adicionar</button>`;
-        el.appendChild(div);
-      });
+      produtos
+        .filter(p => Number(p.estoque) > 0)
+        .forEach(p=>{
+          const img = p.imagem || "https://via.placeholder.com/300x300?text=Produto";
+          const div = document.createElement("div"); div.className="card";
+          div.innerHTML = `
+            <img src="${img}" alt="${p.nome}">
+            <h3>${p.nome}</h3>
+            <p>R$ ${moeda(p.preco)}</p>
+            <p>Estoque: ${p.estoque}</p>
+            <button class="btn" onclick="adicionar(${p.id}, '${p.nome.replace(/'/g,'&#39;')}', ${Number(p.preco)})">Adicionar</button>
+          `;
+          el.appendChild(div);
+        });
     }
+
     function adicionar(id,nome,preco){
       const item = carrinho.find(i=>i.id===id);
       if(item) item.quantidade++; else carrinho.push({id,nome,preco,quantidade:1});
       render();
     }
+
     function render(){
       const tb = document.getElementById("itensCarrinho"); tb.innerHTML = "";
       let total = 0;
@@ -84,6 +98,7 @@
       });
       document.getElementById("totalCarrinho").textContent = "Total: R$ " + moeda(total);
     }
+
     async function finalizarPedido(){
       if(!carrinho.length) return alert("Carrinho vazio!");
       const btn = document.getElementById("btnFinalizar"); btn.disabled = true;
@@ -99,16 +114,22 @@
           cliente: { nome, endereco },
           itens: carrinho.map(i=>({ id:i.id, nome:i.nome, preco:i.preco, quantidade:i.quantidade })),
           total: Number(total.toFixed(2)),
-          pagamento, pix: pagamento==="PIX", status:"Pendente"
+          pagamento,
+          pix: pagamento === "PIX",
+          status: "Pendente"
         };
 
-        const res = await fetch("/api/pedidos", { method:"POST", headers:{ "Content-Type":"application/json" }, body: JSON.stringify(pedido) });
+        const res = await fetch("/api/pedidos", {
+          method:"POST",
+          headers:{ "Content-Type":"application/json" },
+          body: JSON.stringify(pedido)
+        });
         const salvo = await res.json();
 
-        if (pagamento==="PIX" && salvo.pix){
+        if (pagamento === "PIX" && salvo?.pix){
           const s = document.getElementById("pagamento"); s.style.display="block";
+          // Mostra o QRCode (ok) e **somente** a chave telefone
           document.getElementById("pixQrCode").src = salvo.pix.qrCodeImage || "/qrcode_pix.png";
-          document.getElementById("pixPayload").textContent = salvo.pix.payload || "99 991842200";
           document.getElementById("pixChave").textContent = salvo.pix.chave || "99 991842200";
         } else {
           document.getElementById("pagamento").style.display="none";
@@ -116,16 +137,24 @@
 
         alert("Pedido realizado! ID: " + salvo.id + " — Total: R$ " + moeda(total));
         carrinho = []; render();
-      }catch(e){ console.error(e); alert("Erro ao finalizar. Tente novamente."); }
-      finally{ btn.disabled = false; }
+      }catch(e){
+        console.error(e);
+        alert("Erro ao finalizar. Tente novamente.");
+      }finally{
+        btn.disabled = false;
+      }
     }
-    function copiarPix(){
-      const txt = document.getElementById("pixPayload").textContent;
+
+    // Copia **apenas** a chave telefone
+    function copiarChave(){
+      const txt = document.getElementById("pixChave").textContent.trim();
       navigator.clipboard.writeText(txt).then(()=>{
-        const msg = document.getElementById("msgCopiado"); msg.style.display="block";
+        const msg = document.getElementById("msgCopiado");
+        msg.style.display="block";
         setTimeout(()=>msg.style.display="none", 3000);
       });
     }
+
     document.addEventListener("DOMContentLoaded", carregarProdutos);
   </script>
 </body>
