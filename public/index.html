@@ -4,6 +4,8 @@
   <meta charset="UTF-8" />
   <title>Painel - Adega Sistema</title>
   <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <link rel="manifest" href="/manifest.json" />
+  <meta name="theme-color" content="#111111" />
   <style>
     body { margin:0; font-family:Arial, sans-serif; display:flex; height:100vh; background:#1c1c1c; color:#fff; }
     .sidebar{ width:220px; background:#111; padding:20px; }
@@ -55,171 +57,178 @@
     </section>
   </div>
 
-  <!-- áudio embutido em base64 (não precisa de arquivo externo) -->
-  <audio id="alertSound" preload="auto" playsinline
-    src="data:audio/wav;base64,UklGRiQAAABXQVZFZm10IBAAAAABAAEAESsAACJWAAACABYAAAABAAACAAA=">
-  </audio>
-
-  <!-- botões de som -->
-  <div id="soundButtons" style="position:fixed;right:16px;bottom:16px;display:flex;gap:8px;z-index:9999;">
-    <button id="btnAtivarSom" style="background:#27ae60;color:#fff;border:none;border-radius:999px;padding:10px 14px;box-shadow:0 2px 6px rgba(0,0,0,.3);display:none;">🔔 Ativar som</button>
-    <button id="btnTestarSom" style="background:#3498db;color:#fff;border:none;border-radius:999px;padding:10px 14px;box-shadow:0 2px 6px rgba(0,0,0,.3);display:none;">▶️ Testar som</button>
-  </div>
-
-  <!-- status do som -->
-  <div id="soundStatus" style="position:fixed;left:16px;bottom:16px;background:#333;color:#fff;padding:6px 10px;border-radius:8px;font:12px/1 Arial;opacity:.9;z-index:9999;display:none">
-    som: <b id="soundState">desconhecido</b>
-  </div>
-
-  <!-- painel de notificações -->
-  <div id="notifPanel" style="position:fixed;left:16px;bottom:60px;background:#333;color:#fff;padding:6px 10px;border-radius:8px;font:12px/1 Arial;opacity:.9;z-index:9999;">
-    notificações: <b id="notifState">checando…</b>
-    <button id="btnTestNotif" style="margin-left:8px;background:#f39c12;color:#111;border:none;border-radius:6px;padding:6px 8px;cursor:pointer;">
-      🔔 Testar notificação
-    </button>
-  </div>
+  <audio id="alertSound" preload="auto"></audio>
 
   <script>
     const API = { produtos: "/api/produtos", pedidos: "/api/pedidos" };
+
+    // ==== Navegação simples ====
+    function mostrarSecao(id){
+      document.querySelectorAll("section").forEach(s=>s.classList.remove("active"));
+      document.getElementById(id).classList.add("active");
+    }
     const moeda = n => Number(n).toFixed(2).replace('.', ',');
 
-    // ---------------- ALERTAS ----------------
-    const alertEl   = document.getElementById("alertSound");
-    const btnAtivar = document.getElementById("btnAtivarSom");
-    const btnTestar = document.getElementById("btnTestarSom");
-    const soundBox  = document.getElementById("soundStatus");
-    const soundState= document.getElementById("soundState");
-
-    let pedidosConhecidos = new Set();
-    let audioPronto = false;
-    let waCtx = null;
-
-    function setSoundStatus(txt, ok=false){
-      soundBox.style.display = "block";
-      soundState.textContent = txt;
-      soundBox.style.background = ok ? "#1e7e34" : "#7d3c3c";
+    // ==== Service Worker + Push ====
+    let swReg = null;
+    async function registrarServiceWorker() {
+      if ("serviceWorker" in navigator) {
+        try {
+          swReg = await navigator.serviceWorker.register("/service-worker.js");
+          console.log("[SW] registrado", swReg);
+        } catch (e) {
+          console.warn("[SW] falhou:", e);
+        }
+      }
     }
 
-    // Fallback WebAudio
-    function waBeep(){
-      if (!waCtx) return;
-      const now = waCtx.currentTime;
-      const osc = waCtx.createOscillator();
-      const gain= waCtx.createGain();
-      osc.type = "sine"; osc.frequency.value = 880;
-      gain.gain.setValueAtTime(0.001, now);
-      gain.gain.exponentialRampToValueAtTime(0.2, now + 0.01);
-      gain.gain.exponentialRampToValueAtTime(0.001, now + 0.25);
-      osc.connect(gain).connect(waCtx.destination);
-      osc.start(now); osc.stop(now + 0.26);
+    function urlBase64ToUint8Array(base64String){
+      const padding = "=".repeat((4 - base64String.length % 4) % 4);
+      const base64 = (base64String + padding).replace(/-/g, "+").replace(/_/g, "/");
+      const rawData = atob(base64);
+      return Uint8Array.from([...rawData].map(c => c.charCodeAt(0)));
     }
 
-    async function unlockWithGesture(){
-      const Ctx = window.AudioContext || window.webkitAudioContext;
-      if (!waCtx && Ctx) waCtx = new Ctx();
-      if (waCtx && waCtx.state !== "running") await waCtx.resume();
-
-      try { alertEl.currentTime=0; await alertEl.play(); alertEl.pause(); audioPronto=true; }
-      catch { audioPronto=false; }
-
-      if (audioPronto) setSoundStatus("OK (<audio>)", true);
-      else if (waCtx && waCtx.state==="running") setSoundStatus("OK (WebAudio)", true);
-      else setSoundStatus("bloqueado", false);
-    }
-
-    async function tocarAlerta(force=false){
+    async function inscreverPush() {
+      if (!("serviceWorker" in navigator) || !("PushManager" in window)) return;
       try {
-        if (audioPronto || force) { alertEl.currentTime=0; await alertEl.play(); return; }
-      } catch { audioPronto=false; }
-      if (waCtx) waBeep();
+        const keyRes = await fetch("/api/push/public-key");
+        const { publicKey } = await keyRes.json();
+        if (!publicKey) { console.warn("PublicKey não disponível."); return; }
+
+        const perm = await Notification.requestPermission();
+        if (perm !== "granted") { console.warn("Permissão de notificação negada."); return; }
+
+        const reg = swReg || (await navigator.serviceWorker.ready);
+        const sub = await reg.pushManager.subscribe({
+          userVisibleOnly: true,
+          applicationServerKey: urlBase64ToUint8Array(publicKey)
+        });
+
+        await fetch("/api/push/subscribe", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(sub)
+        });
+        console.log("[push] inscrito com sucesso.");
+      } catch (e) {
+        console.warn("[push] erro:", e);
+      }
     }
 
-    btnAtivar.addEventListener("click", unlockWithGesture);
-    btnTestar.addEventListener("click", ()=>{ unlockWithGesture(); tocarAlerta(true); });
-    window.addEventListener("touchstart", ()=>unlockWithGesture(), {once:true});
-    window.addEventListener("click", ()=>unlockWithGesture(), {once:true});
-    setTimeout(()=>{ if(!audioPronto) { btnAtivar.style.display="inline-block"; btnTestar.style.display="inline-block"; }},1000);
-
-    // ---------------- NOTIFICAÇÕES ----------------
-    const notifStateEl=document.getElementById("notifState");
-    const btnTestNotif=document.getElementById("btnTestNotif");
-
-    function atualizarNotifState(){ 
-      if(!("Notification" in window)){ notifStateEl.textContent="não suportadas"; return; }
-      notifStateEl.textContent=Notification.permission;
+    function notificarBanner(p) {
+      if (!("Notification" in window) || Notification.permission !== "granted") return;
+      if (swReg && swReg.showNotification) {
+        swReg.showNotification("Novo pedido!", {
+          body: `#${p.id} · ${p.cliente?.nome || "Cliente"} · R$ ${moeda(p.total)}`,
+          tag: `pedido-${p.id}`,
+          vibrate: [100, 50, 100],
+          icon: "/icons/icon-192.png",
+          badge: "/icons/icon-192.png"
+        });
+      } else {
+        new Notification("Novo pedido!", {
+          body: `#${p.id} · ${p.cliente?.nome || "Cliente"} · R$ ${moeda(p.total)}`,
+          tag: `pedido-${p.id}`
+        });
+      }
     }
-    async function pedirPermissaoNotificacao(){
-      if(!("Notification" in window)) return;
-      if(Notification.permission==="default"){ try{ await Notification.requestPermission(); }catch{} }
-      atualizarNotifState();
-    }
-    function notificarBanner(p){
-      if(!("Notification" in window) || Notification.permission!=="granted") return;
-      new Notification("Novo pedido!",{
-        body:`#${p.id} · ${p.cliente?.nome||"Cliente"} · R$ ${moeda(p.total)}`,
-        tag:`pedido-${p.id}`
-      });
-    }
-    btnTestNotif.addEventListener("click", ()=>{ pedirPermissaoNotificacao().then(()=>{ notificarBanner({id:"teste",cliente:{nome:"Teste"},total:1}); }); });
-    atualizarNotifState(); pedirPermissaoNotificacao();
-    function vibrarCurto(){ if(navigator.vibrate) navigator.vibrate(200); }
 
-    // ---------------- PRODUTOS ----------------
+    // ==== Produtos ====
     async function carregarProdutos(){
-      const res=await fetch(API.produtos,{cache:"no-store"});
-      const produtos=await res.json();
-      const tbody=document.getElementById("listaProdutos"); tbody.innerHTML="";
+      const res = await fetch(API.produtos, { cache:"no-store" });
+      const produtos = await res.json();
+      const tbody = document.getElementById("listaProdutos");
+      tbody.innerHTML = "";
       produtos.forEach(p=>{
-        const tr=document.createElement("tr");
-        tr.innerHTML=`<td>${p.nome}</td><td>R$ ${moeda(p.preco)}</td><td>${p.estoque}</td>
+        const tr = document.createElement("tr");
+        tr.innerHTML = `
+          <td>${p.nome}</td>
+          <td>R$ ${moeda(p.preco)}</td>
+          <td>${p.estoque}</td>
           <td><button class="btn-remover" onclick="removerProduto(${p.id})">Excluir</button></td>`;
         tbody.appendChild(tr);
       });
     }
-    async function removerProduto(id){ if(confirm("Excluir?")){ await fetch(`${API.produtos}/${id}`,{method:"DELETE"}); carregarProdutos(); } }
-    document.getElementById("formProdutos").addEventListener("submit",async e=>{
+    async function removerProduto(id){
+      if(confirm("Excluir?")){
+        await fetch(\`\${API.produtos}/\${id}\`,{method:"DELETE"});
+        carregarProdutos();
+      }
+    }
+    document.getElementById("formProdutos").addEventListener("submit", async e=>{
       e.preventDefault();
-      const novo={nome:nomeProduto.value,preco:parseFloat(precoProduto.value),estoque:parseInt(estoqueProduto.value),imagem:imagemProduto.value||"https://via.placeholder.com/300x300?text=Produto"};
-      await fetch(API.produtos,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(novo)});
-      e.target.reset(); carregarProdutos();
+      const novo = {
+        nome: nomeProduto.value,
+        preco: parseFloat(precoProduto.value),
+        estoque: parseInt(estoqueProduto.value),
+        imagem: imagemProduto.value || "https://via.placeholder.com/300x300?text=Produto"
+      };
+      await fetch(API.produtos, { method:"POST", headers:{ "Content-Type":"application/json" }, body: JSON.stringify(novo) });
+      e.target.reset();
+      carregarProdutos();
     });
 
-    // ---------------- PEDIDOS ----------------
+    // ==== Pedidos ====
+    let pedidosConhecidos = new Set();
     async function carregarPedidos(){
-      const res=await fetch(API.pedidos,{cache:"no-store"});
-      const pedidos=await res.json();
-      const tbody=document.getElementById("listaPedidos"); tbody.innerHTML="";
-      if(pedidosConhecidos.size===0){ pedidos.forEach(p=>pedidosConhecidos.add(p.id)); }
-      else{
-        pedidos.forEach(p=>{
-          if(!pedidosConhecidos.has(p.id)){
-            pedidosConhecidos.add(p.id);
-            tocarAlerta();
+      const res = await fetch(API.pedidos, { cache:"no-store" });
+      const pedidos = await res.json();
+      const tbody = document.getElementById("listaPedidos");
+      tbody.innerHTML = "";
+
+      // dispara notificação em pedidos novos
+      pedidos.forEach(p => {
+        if (!pedidosConhecidos.has(p.id)) {
+          if (pedidosConhecidos.size > 0) {
             notificarBanner(p);
-            vibrarCurto();
           }
-        });
-      }
+          pedidosConhecidos.add(p.id);
+        }
+      });
+
       pedidos.forEach(p=>{
-        const itens=(p.itens||[]).map(i=>`${i.nome} x${i.quantidade}`).join(", ");
-        const tr=document.createElement("tr");
-        tr.innerHTML=`<td>${p.id}</td><td>${p.cliente?.nome||"-"}</td><td>${p.cliente?.endereco||"-"}</td>
-          <td>${itens}</td><td>R$ ${moeda(p.total)}</td><td>${p.pix?"PIX":"Outro"}</td>
-          <td><select onchange="atualizarStatus(${p.id},this.value)">
-            <option ${p.status==="Pendente"?"selected":""}>Pendente</option>
-            <option ${p.status==="Preparando"?"selected":""}>Preparando</option>
-            <option ${p.status==="Saiu para entrega"?"selected":""}>Saiu para entrega</option>
-            <option ${p.status==="Concluído"?"selected":""}>Concluído</option>
-          </select></td>
+        const itens = (p.itens||[]).map(i=>\`\${i.nome} x\${i.quantidade}\`).join(", ");
+        const tr = document.createElement("tr");
+        tr.innerHTML = `
+          <td>${p.id}</td>
+          <td>${p.cliente?.nome||"-"}</td>
+          <td>${p.cliente?.endereco||"-"}</td>
+          <td>${itens}</td>
+          <td>R$ ${moeda(p.total)}</td>
+          <td>${p.pix?"PIX":"Outro"}</td>
+          <td>
+            <select onchange="atualizarStatus(${p.id}, this.value)">
+              <option ${p.status==="Pendente"?"selected":""}>Pendente</option>
+              <option ${p.status==="Preparando"?"selected":""}>Preparando</option>
+              <option ${p.status==="Saiu para entrega"?"selected":""}>Saiu para entrega</option>
+              <option ${p.status==="Concluído"?"selected":""}>Concluído</option>
+            </select>
+          </td>
           <td><button class="btn-remover" onclick="removerPedido(${p.id})">Excluir</button></td>`;
         tbody.appendChild(tr);
       });
     }
-    async function atualizarStatus(id,status){ await fetch(`${API.pedidos}/${id}/status`,{method:"PUT",headers:{"Content-Type":"application/json"},body:JSON.stringify({status})}); carregarPedidos(); }
-    async function removerPedido(id){ if(confirm("Excluir pedido?")){ await fetch(`${API.pedidos}/${id}`,{method:"DELETE"}); carregarPedidos(); } }
 
-    // ---------------- START ----------------
-    document.addEventListener("DOMContentLoaded",()=>{ carregarProdutos(); carregarPedidos(); setInterval(carregarPedidos,5000); });
+    async function atualizarStatus(id, status){
+      await fetch(\`\${API.pedidos}/\${id}/status\`, {
+        method:"PUT", headers:{ "Content-Type":"application/json" }, body: JSON.stringify({ status })
+      });
+      carregarPedidos();
+    }
+    async function removerPedido(id){
+      if(confirm("Excluir pedido?")){
+        await fetch(\`\${API.pedidos}/\${id}\`, { method:"DELETE" });
+        carregarPedidos();
+      }
+    }
+
+    document.addEventListener("DOMContentLoaded", ()=>{
+      registrarServiceWorker().then(inscreverPush);
+      carregarProdutos();
+      carregarPedidos();
+      setInterval(carregarPedidos, 5000);
+    });
   </script>
 </body>
 </html>
