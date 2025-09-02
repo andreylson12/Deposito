@@ -1,0 +1,34 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Login do Painel</title>
+  <style>
+    body{margin:0;display:flex;align-items:center;justify-content:center;height:100vh;font-family:Arial;background:#111;color:#fff}
+    .box{width:320px;background:#1c1c1c;border-radius:10px;padding:24px;box-shadow:0 8px 24px rgba(0,0,0,.4)}
+    input,button{width:100%;padding:10px;border-radius:8px;border:none;margin:8px 0}
+    input{background:#222;color:#fff}
+    button{background:#27ae60;color:#fff;cursor:pointer}
+    button:hover{background:#219150}
+  </style>
+</head>
+<body>
+  <div class="box">
+    <h2>Entrar no Painel</h2>
+    <p>Informe o token de administrador</p>
+    <input id="senha" type="password" placeholder="Token de acesso" />
+    <button onclick="login()">Entrar</button>
+    <p id="msg" style="color:#f66"></p>
+  </div>
+
+  <script>
+    function login(){
+      const token = document.getElementById("senha").value.trim();
+      if(!token){ document.getElementById("msg").textContent = "Digite o token."; return; }
+      localStorage.setItem("adminToken", token);
+      location.href = "/index.html";
+    }
+  </script>
+</body>
+</html>
