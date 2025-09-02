@@ -1,4 +1,4 @@
-// server.js – Railway + PIX + Produtos/Pedidos + Telegram + (opcional) Web Push + Login simples
+// server.js – Railway + PIX + Produtos/Pedidos + Telegram + (opcional) Web Push + Backup/Restore
 const express = require("express");
 const fs = require("fs");
 const path = require("path");
@@ -13,7 +13,8 @@ const app = express();
 const PORT = process.env.PORT || 3000;
 
 /* -------------------------------- Middlewares -------------------------------- */
-app.use(express.json());
+// aceita até ~5MB de JSON (para restore)
+app.use(express.json({ limit: "5mb" }));
 app.use(
   cors({
     origin: true,
@@ -78,17 +79,8 @@ function saveDB(db) {
   }
 }
 
-/* --------------------------- Login simples (token) --------------------------- */
-const ADMIN_TOKEN = process.env.ADMIN_TOKEN || ""; // defina no Railway
-function requireAdmin(req, res, next) {
-  if (!ADMIN_TOKEN) return next(); // sem token configurado => não bloqueia (útil p/ testes)
-  const token = req.headers["x-admin-token"];
-  if (token !== ADMIN_TOKEN) return res.status(401).json({ error: "Não autorizado" });
-  next();
-}
-
 /* -------------------------------- Config PIX -------------------------------- */
-const chavePix = "99 991842200";
+const chavePix = "99 991842200";     // <- sua chave telefone
 const nomeLoja = "ANDREYLSON SODRE";
 const cidade   = "SAMBAIBA";
 
@@ -233,7 +225,7 @@ app.get("/api/produtos", (_req, res) => {
   res.json(db.produtos);
 });
 
-app.post("/api/produtos", requireAdmin, (req, res) => {
+app.post("/api/produtos", (req, res) => {
   const db = loadDB();
   const novo = { ...req.body, id: Date.now() };
   db.produtos.push(novo);
@@ -241,7 +233,7 @@ app.post("/api/produtos", requireAdmin, (req, res) => {
   res.json(novo);
 });
 
-app.delete("/api/produtos/:id", requireAdmin, (req, res) => {
+app.delete("/api/produtos/:id", (req, res) => {
   const db = loadDB();
   const id = Number(req.params.id);
   db.produtos = db.produtos.filter((p) => p.id !== id);
@@ -336,7 +328,7 @@ app.post("/api/pedidos", async (req, res) => {
   res.json(pedido);
 });
 
-app.put("/api/pedidos/:id/status", requireAdmin, (req, res) => {
+app.put("/api/pedidos/:id/status", (req, res) => {
   const db = loadDB();
   const id = Number(req.params.id);
   const pedido = db.pedidos.find((p) => p.id === id);
@@ -350,7 +342,7 @@ app.put("/api/pedidos/:id/status", requireAdmin, (req, res) => {
   res.json(pedido);
 });
 
-app.delete("/api/pedidos/:id", requireAdmin, (req, res) => {
+app.delete("/api/pedidos/:id", (req, res) => {
   const db = loadDB();
   const id = Number(req.params.id);
   db.pedidos = db.pedidos.filter((p) => p.id !== id);
@@ -358,13 +350,14 @@ app.delete("/api/pedidos/:id", requireAdmin, (req, res) => {
   res.json({ success: true });
 });
 
-/* ---------------- Debug/Backup/Restore (protegidos por token próprio) ------- */
+/* ---------------- Debug/Backup/Restore (protegidos por token) --------------- */
 const DEBUG_TOKEN = process.env.DEBUG_TOKEN || "segredo123"; // defina no Railway
 
+// GET /api/debug-db?token=...
 app.get("/api/debug-db", (req, res) => {
   const token = req.query.token;
   if (token !== DEBUG_TOKEN) {
-    return res.status(403).json({ error: "Acesso negado. Token inválido." });
+    return res.status(403).json({ error: "Acesso negado. Forneça o token correto." });
   }
   try {
     const db = loadDB();
@@ -374,6 +367,7 @@ app.get("/api/debug-db", (req, res) => {
   }
 });
 
+// GET /api/backup?token=...
 app.get("/api/backup", (req, res) => {
   const token = req.query.token;
   if (token !== DEBUG_TOKEN) {
@@ -381,24 +375,89 @@ app.get("/api/backup", (req, res) => {
   }
   try {
     const db = loadDB();
-    res.setHeader("Content-Disposition", `attachment; filename="backup-db.json"`);
-    res.json(db);
-  } catch (e) {
-    res.status(500).json({ error: "Erro ao gerar backup", details: e.message });
+    const ts = new Date().toISOString().replace(/[:.]/g, "-");
+    res.setHeader("Content-Disposition", `attachment; filename=db-backup-${ts}.json`);
+    res.setHeader("Content-Type", "application/json");
+    res.send(JSON.stringify(db, null, 2));
+  } catch (err) {
+    res.status(500).json({ error: "Erro ao gerar backup", detalhe: err.message });
   }
 });
 
+// POST /api/restore?token=...&mode=replace|merge
+// Body deve ser o próprio conteúdo JSON do db (produtos, pedidos, pushSubs)
 app.post("/api/restore", (req, res) => {
   const token = req.query.token;
   if (token !== DEBUG_TOKEN) {
     return res.status(403).json({ error: "Acesso negado. Token inválido." });
   }
+
+  // aceita { ...db } ou { db: { ... } }
+  const incoming = req.body?.db && typeof req.body.db === "object" ? req.body.db : req.body;
+  const data = ensureDBShape(incoming);
+
+  // validação simples
+  if (!Array.isArray(data.produtos) || !Array.isArray(data.pedidos) || !Array.isArray(data.pushSubs)) {
+    return res.status(400).json({ error: "Formato inválido. Esperado objeto com produtos[], pedidos[], pushSubs[]." });
+  }
+
+  const mode = String(req.query.mode || "replace").toLowerCase(); // replace | merge
+
   try {
-    const incoming = ensureDBShape(req.body || {});
-    saveDB(incoming);
-    res.json({ ok: true });
-  } catch (e) {
-    res.status(500).json({ error: "Erro ao restaurar", details: e.message });
+    const current = loadDB();
+
+    // backup de segurança do arquivo atual
+    const ts = new Date().toISOString().replace(/[:.]/g, "-");
+    const backupPath = DB_FILE + ".bak-" + ts;
+    fs.copyFileSync(DB_FILE, backupPath);
+
+    let finalDB;
+
+    if (mode === "merge") {
+      // mescla por id nos arrays produtos/pedidos; pushSubs concat/uniq por endpoint
+      const byId = (arr) => Object.fromEntries((arr || []).map(x => [String(x.id), x]));
+      const mergeById = (base, inc) => {
+        const map = byId(base);
+        for (const item of inc || []) {
+          const k = String(item.id);
+          map[k] = item; // incoming vence
+        }
+        return Object.values(map);
+      };
+
+      const uniqBy = (arr, keyFn) => {
+        const seen = new Set();
+        const out = [];
+        for (const v of arr || []) {
+          const k = keyFn(v);
+          if (!seen.has(k)) { seen.add(k); out.push(v); }
+        }
+        return out;
+      };
+
+      finalDB = {
+        produtos: mergeById(current.produtos, data.produtos),
+        pedidos:  mergeById(current.pedidos,  data.pedidos),
+        pushSubs: uniqBy([...(current.pushSubs||[]), ...(data.pushSubs||[])], s => s?.endpoint || JSON.stringify(s))
+      };
+
+    } else { // replace (padrão)
+      finalDB = data;
+    }
+
+    saveDB(finalDB);
+    res.json({
+      ok: true,
+      mode,
+      counts: {
+        produtos: finalDB.produtos.length,
+        pedidos:  finalDB.pedidos.length,
+        pushSubs: finalDB.pushSubs.length,
+      },
+      backup: path.basename(backupPath),
+    });
+  } catch (err) {
+    res.status(500).json({ error: "Erro ao restaurar", detalhe: err.message });
   }
 });
 
