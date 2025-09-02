@@ -20,6 +20,8 @@
     button{ background:#27ae60; color:#fff; cursor:pointer; }
     button:hover{ background:#219150; }
     .btn-remover{ background:#e74c3c; }
+    .topbar { display:flex; justify-content:space-between; align-items:center; }
+    .link-sair { color:#bbb; cursor:pointer; text-decoration:underline; }
   </style>
 </head>
 <body>
@@ -30,8 +32,13 @@
   </div>
 
   <div class="content">
-    <h1>Painel Administrativo</h1>
-    <p>Gerencie seus produtos e pedidos.</p>
+    <div class="topbar">
+      <div>
+        <h1 style="margin:0 0 4px 0;">Painel Administrativo</h1>
+        <p style="margin:0;">Gerencie seus produtos e pedidos.</p>
+      </div>
+      <span class="link-sair" onclick="logout()">sair</span>
+    </div>
 
     <section id="produtos" class="active">
       <h2>🏷️ Produtos</h2>
@@ -59,7 +66,20 @@
 
   <audio id="alertSound" preload="auto"></audio>
 
- <script>
+<script>
+  /* ==== LOGIN (token) ==== */
+  const ADMIN_TOKEN = localStorage.getItem("adminToken") || "";
+  if (!ADMIN_TOKEN) {
+    // sem token -> manda pra tela de login
+    window.location.href = "/login.html";
+  }
+
+  function logout(){
+    localStorage.removeItem("adminToken");
+    window.location.href = "/login.html";
+  }
+
+  /* ==== Constantes / utils ==== */
   const API = { produtos: "/api/produtos", pedidos: "/api/pedidos" };
 
   function mostrarSecao(id){
@@ -130,7 +150,7 @@
     }
   }
 
-  // Produtos
+  /* ==== Produtos ==== */
   async function carregarProdutos(){
     const res = await fetch(API.produtos, { cache:"no-store" });
     const produtos = await res.json();
@@ -146,12 +166,16 @@
       tbody.appendChild(tr);
     });
   }
+
   async function removerProduto(id){
-    if(confirm("Excluir?")){
-      await fetch(`${API.produtos}/${id}`, { method:"DELETE" });
-      carregarProdutos();
-    }
+    if(!confirm("Excluir?")) return;
+    await fetch(`${API.produtos}/${id}`, {
+      method:"DELETE",
+      headers: { "x-admin-token": ADMIN_TOKEN } // ← token no header
+    });
+    carregarProdutos();
   }
+
   document.getElementById("formProdutos").addEventListener("submit", async e=>{
     e.preventDefault();
     const novo = {
@@ -162,15 +186,19 @@
     };
     await fetch(API.produtos, {
       method:"POST",
-      headers:{ "Content-Type":"application/json" },
+      headers:{
+        "Content-Type":"application/json",
+        "x-admin-token": ADMIN_TOKEN // ← token no header
+      },
       body: JSON.stringify(novo)
     });
     e.target.reset();
     carregarProdutos();
   });
 
-  // Pedidos
+  /* ==== Pedidos ==== */
   let pedidosConhecidos = new Set();
+
   async function carregarPedidos(){
     const res = await fetch(API.pedidos, { cache:"no-store" });
     const pedidos = await res.json();
@@ -206,19 +234,26 @@
       tbody.appendChild(tr);
     });
   }
+
   async function atualizarStatus(id, status){
     await fetch(`${API.pedidos}/${id}/status`, {
       method:"PUT",
-      headers:{ "Content-Type":"application/json" },
+      headers:{
+        "Content-Type":"application/json",
+        "x-admin-token": ADMIN_TOKEN // ← token no header
+      },
       body: JSON.stringify({ status })
     });
     carregarPedidos();
   }
+
   async function removerPedido(id){
-    if(confirm("Excluir pedido?")){
-      await fetch(`${API.pedidos}/${id}`, { method:"DELETE" });
-      carregarPedidos();
-    }
+    if(!confirm("Excluir pedido?")) return;
+    await fetch(`${API.pedidos}/${id}`, {
+      method:"DELETE",
+      headers: { "x-admin-token": ADMIN_TOKEN } // ← token no header
+    });
+    carregarPedidos();
   }
 
   document.addEventListener("DOMContentLoaded", ()=>{
@@ -228,3 +263,5 @@
     setInterval(carregarPedidos, 5000);
   });
 </script>
+</body>
+</html>
