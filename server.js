@@ -15,9 +15,8 @@ const PORT = process.env.PORT || 3000;
 /* ------------------------------- Basic Auth --------------------------------- */
 // Credenciais e opções
 const ADMIN_USER = process.env.ADMIN_USER || "admin";
-const ADMIN_PASS = process.env.ADMIN_PASS || "senha123";
+const ADMIN_PASS = process.env.ADMIN_PASS || "senha123"; // ⚠️ defina no Railway
 const ADMIN_REALM = "Adega Admin";
-const PROTECT_API = (process.env.ADMIN_PROTECT_API ?? "true").toLowerCase() !== "false";
 
 // Middleware simples de Basic Auth
 function basicAuth(req, res, next) {
@@ -31,9 +30,11 @@ function basicAuth(req, res, next) {
   return res.status(401).send("Autenticação requerida");
 }
 
+// Use este alias SÓ onde realmente precisa proteger
+const adminOnly = [basicAuth];
+
 /* -------------------------------- Middlewares -------------------------------- */
-// aceita até ~5MB de JSON (para restore)
-app.use(express.json({ limit: "5mb" }));
+app.use(express.json({ limit: "5mb" })); // aceita até ~5MB de JSON (para restore)
 app.use(
   cors({
     origin: true,
@@ -157,13 +158,12 @@ async function sendPushToAll(title, body, data = {}) {
 }
 
 /* --------------------------- Rotas de Push (opcional) ----------------------- */
-const maybeAuth = PROTECT_API ? [basicAuth] : []; // helper pra condicionar proteção
-
-app.get("/api/push/public-key", ...maybeAuth, (_req, res) => {
+// Deixe públicas se pretende usar push na página pública.
+// Se preferir que só o admin assine, troque por "...adminOnly".
+app.get("/api/push/public-key", (_req, res) => {
   res.json({ publicKey: VAPID_PUBLIC || "" });
 });
-
-app.post("/api/push/subscribe", ...maybeAuth, (req, res) => {
+app.post("/api/push/subscribe", (req, res) => {
   try {
     const sub = req.body; // { endpoint, keys:{p256dh, auth} }
     if (!sub?.endpoint) return res.status(400).json({ error: "assinatura inválida" });
@@ -179,8 +179,7 @@ app.post("/api/push/subscribe", ...maybeAuth, (req, res) => {
     res.status(500).json({ error: "falha ao salvar assinatura" });
   }
 });
-
-app.post("/api/push/unsubscribe", ...maybeAuth, (req, res) => {
+app.post("/api/push/unsubscribe", (req, res) => {
   try {
     const { endpoint } = req.body || {};
     if (!endpoint) return res.status(400).json({ error: "endpoint ausente" });
@@ -204,7 +203,6 @@ const _fetch = (...args) =>
 const TG_TOKEN = process.env.TELEGRAM_BOT_TOKEN || "";
 const TG_CHAT  = process.env.TELEGRAM_CHAT_ID    || "";
 
-/** Envia mensagem de texto ao Telegram; ignora se não configurado */
 async function sendTelegramMessage(text) {
   try {
     if (!TG_TOKEN || !TG_CHAT) return;
@@ -220,11 +218,12 @@ async function sendTelegramMessage(text) {
 }
 
 /* -------------------------------- API PIX ----------------------------------- */
-app.get("/api/chave-pix", ...maybeAuth, (_req, res) => {
+// **PÚBLICAS** – usadas pela página delivery
+app.get("/api/chave-pix", (_req, res) => {
   res.json({ chave: chavePix, nome: nomeLoja, cidade });
 });
 
-app.get("/api/pix/:valor/:txid?", ...maybeAuth, async (req, res) => {
+app.get("/api/pix/:valor/:txid?", async (req, res) => {
   try {
     const raw = String(req.params.valor).replace(",", ".");
     const valor = Number(raw);
@@ -254,12 +253,14 @@ app.get("/api/pix/:valor/:txid?", ...maybeAuth, async (req, res) => {
 });
 
 /* ------------------------------- Produtos ----------------------------------- */
-app.get("/api/produtos", ...maybeAuth, (_req, res) => {
+// GET é **público** (listagem para o delivery)
+app.get("/api/produtos", (_req, res) => {
   const db = loadDB();
   res.json(db.produtos);
 });
 
-app.post("/api/produtos", ...maybeAuth, (req, res) => {
+// Criação/remoção são **admin**
+app.post("/api/produtos", ...adminOnly, (req, res) => {
   const db = loadDB();
   const novo = { ...req.body, id: Date.now() };
   db.produtos.push(novo);
@@ -267,7 +268,7 @@ app.post("/api/produtos", ...maybeAuth, (req, res) => {
   res.json(novo);
 });
 
-app.delete("/api/produtos/:id", ...maybeAuth, (req, res) => {
+app.delete("/api/produtos/:id", ...adminOnly, (req, res) => {
   const db = loadDB();
   const id = Number(req.params.id);
   db.produtos = db.produtos.filter((p) => p.id !== id);
@@ -276,20 +277,40 @@ app.delete("/api/produtos/:id", ...maybeAuth, (req, res) => {
 });
 
 /* -------------------------------- Pedidos ----------------------------------- */
-app.get("/api/pedidos", ...maybeAuth, (_req, res) => {
+// **Admin**: listar, ver, atualizar status, deletar
+app.get("/api/pedidos", ...adminOnly, (_req, res) => {
   const db = loadDB();
   res.json(db.pedidos);
 });
-
-app.get("/api/pedidos/:id", ...maybeAuth, (req, res) => {
+app.get("/api/pedidos/:id", ...adminOnly, (req, res) => {
   const db = loadDB();
   const id = Number(req.params.id);
   const pedido = db.pedidos.find((p) => p.id === id);
   if (!pedido) return res.status(404).json({ error: "Pedido não encontrado" });
   res.json(pedido);
 });
+app.put("/api/pedidos/:id/status", ...adminOnly, (req, res) => {
+  const db = loadDB();
+  const id = Number(req.params.id);
+  const pedido = db.pedidos.find((p) => p.id === id);
+  if (!pedido) return res.status(404).json({ error: "Pedido não encontrado" });
 
-app.post("/api/pedidos", ...maybeAuth, async (req, res) => {
+  pedido.status = req.body.status || pedido.status;
+  saveDB(db);
+
+  sendTelegramMessage(`🔔 Pedido #${id} atualizado para: <b>${pedido.status}</b>`).catch(() => {});
+  res.json(pedido);
+});
+app.delete("/api/pedidos/:id", ...adminOnly, (req, res) => {
+  const db = loadDB();
+  const id = Number(req.params.id);
+  db.pedidos = db.pedidos.filter((p) => p.id !== id);
+  saveDB(db);
+  res.json({ success: true });
+});
+
+// **PÚBLICO**: criar pedido (usado pelo delivery)
+app.post("/api/pedidos", async (req, res) => {
   const db = loadDB();
   const pedido = { ...req.body, id: Date.now(), status: "Pendente" };
 
@@ -362,33 +383,11 @@ app.post("/api/pedidos", ...maybeAuth, async (req, res) => {
   res.json(pedido);
 });
 
-app.put("/api/pedidos/:id/status", ...maybeAuth, (req, res) => {
-  const db = loadDB();
-  const id = Number(req.params.id);
-  const pedido = db.pedidos.find((p) => p.id === id);
-  if (!pedido) return res.status(404).json({ error: "Pedido não encontrado" });
-
-  pedido.status = req.body.status || pedido.status;
-  saveDB(db);
-
-  // opcional: avisar mudança de status no Telegram
-  sendTelegramMessage(`🔔 Pedido #${id} atualizado para: <b>${pedido.status}</b>`).catch(() => {});
-  res.json(pedido);
-});
-
-app.delete("/api/pedidos/:id", ...maybeAuth, (req, res) => {
-  const db = loadDB();
-  const id = Number(req.params.id);
-  db.pedidos = db.pedidos.filter((p) => p.id !== id);
-  saveDB(db);
-  res.json({ success: true });
-});
-
 /* ---------------- Debug/Backup/Restore (protegidos por token) --------------- */
-const DEBUG_TOKEN = process.env.DEBUG_TOKEN || "segredo123"; // defina no Railway
+const DEBUG_TOKEN = process.env.DEBUG_TOKEN || "segredo123"; // ⚠️ defina no Railway
 
 // GET /api/debug-db?token=...
-app.get("/api/debug-db", ...maybeAuth, (req, res) => {
+app.get("/api/debug-db", ...adminOnly, (req, res) => {
   const token = req.query.token;
   if (token !== DEBUG_TOKEN) {
     return res.status(403).json({ error: "Acesso negado. Forneça o token correto." });
@@ -402,7 +401,7 @@ app.get("/api/debug-db", ...maybeAuth, (req, res) => {
 });
 
 // GET /api/backup?token=...
-app.get("/api/backup", ...maybeAuth, (req, res) => {
+app.get("/api/backup", ...adminOnly, (req, res) => {
   const token = req.query.token;
   if (token !== DEBUG_TOKEN) {
     return res.status(403).json({ error: "Acesso negado. Token inválido." });
@@ -419,28 +418,23 @@ app.get("/api/backup", ...maybeAuth, (req, res) => {
 });
 
 // POST /api/restore?token=...&mode=replace|merge
-// Body deve ser o próprio conteúdo JSON do db (produtos, pedidos, pushSubs)
-app.post("/api/restore", ...maybeAuth, (req, res) => {
+app.post("/api/restore", ...adminOnly, (req, res) => {
   const token = req.query.token;
   if (token !== DEBUG_TOKEN) {
     return res.status(403).json({ error: "Acesso negado. Token inválido." });
   }
 
-  // aceita { ...db } ou { db: { ... } }
   const incoming = req.body?.db && typeof req.body.db === "object" ? req.body.db : req.body;
   const data = ensureDBShape(incoming);
 
-  // validação simples
   if (!Array.isArray(data.produtos) || !Array.isArray(data.pedidos) || !Array.isArray(data.pushSubs)) {
     return res.status(400).json({ error: "Formato inválido. Esperado objeto com produtos[], pedidos[], pushSubs[]." });
   }
 
   const mode = String(req.query.mode || "replace").toLowerCase(); // replace | merge
-
   try {
     const current = loadDB();
 
-    // backup de segurança do arquivo atual
     const ts = new Date().toISOString().replace(/[:.]/g, "-");
     const backupPath = DB_FILE + ".bak-" + ts;
     fs.copyFileSync(DB_FILE, backupPath);
@@ -448,7 +442,6 @@ app.post("/api/restore", ...maybeAuth, (req, res) => {
     let finalDB;
 
     if (mode === "merge") {
-      // mescla por id nos arrays produtos/pedidos; pushSubs concat/uniq por endpoint
       const byId = (arr) => Object.fromEntries((arr || []).map(x => [String(x.id), x]));
       const mergeById = (base, inc) => {
         const map = byId(base);
@@ -458,7 +451,6 @@ app.post("/api/restore", ...maybeAuth, (req, res) => {
         }
         return Object.values(map);
       };
-
       const uniqBy = (arr, keyFn) => {
         const seen = new Set();
         const out = [];
