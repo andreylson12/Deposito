@@ -26,9 +26,7 @@
     .btn-cancelar{ background:#7f8c8d; }
     .btn-salvar{ background:#27ae60; }
     .acao-grid{ display:flex; gap:8px; justify-content:center; flex-wrap:wrap; }
-    /* Rodapé com a soma */
     .total-row td{font-weight:700;background:#152536;color:#fff}
-    /* Estado de edição */
     tr.editing{ background:#24394d; }
     .helper{ color:#bbb; font-size:12px; margin-top:2px; word-break:break-all; }
   </style>
@@ -76,7 +74,6 @@
 
         <tbody id="listaPedidos"></tbody>
 
-        <!-- Rodapé com auto-soma -->
         <tfoot>
           <tr class="total-row">
             <td colspan="4" style="text-align:right">Total geral:</td>
@@ -92,12 +89,12 @@
 
   <script>
     const API = { produtos: "/api/produtos", pedidos: "/api/pedidos" };
+    const moeda = n => Number(n).toFixed(2).replace('.', ',');
 
     function mostrarSecao(id){
       document.querySelectorAll("section").forEach(s=>s.classList.remove("active"));
       document.getElementById(id).classList.add("active");
     }
-    const moeda = n => Number(n).toFixed(2).replace('.', ',');
 
     // ---------------- Service Worker + Push (opcional) ----------------
     let swReg = null;
@@ -117,7 +114,6 @@
       const rawData = atob(base64);
       return Uint8Array.from([...rawData].map(c => c.charCodeAt(0)));
     }
-    // Silencia quando não há endpoint/chave pública
     async function inscreverPush() {
       if (!("serviceWorker" in navigator) || !("PushManager" in window)) return;
       try {
@@ -125,16 +121,13 @@
         if (!keyRes.ok) return;
         const { publicKey } = await keyRes.json();
         if (!publicKey) return;
-
         const perm = await Notification.requestPermission();
         if (perm !== "granted") return;
-
         const reg = swReg || (await navigator.serviceWorker.ready);
         const sub = await reg.pushManager.subscribe({
           userVisibleOnly: true,
           applicationServerKey: urlBase64ToUint8Array(publicKey)
         });
-
         await fetch("/api/push/subscribe", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -160,69 +153,84 @@
       }
     }
 
-    // ---------------- Produtos (com edição inline estável) ----------------
-    const estadoEdicao = new Map(); // id -> { nome, preco, estoque, imagem, original }
+    // ---------------- Produtos (edição inline) ----------------
+    const estadoEdicao = new Map(); // id(string) -> { ... }
 
     async function carregarProdutos(){
       const res = await fetch(API.produtos, { cache:"no-store" });
+      if (!res.ok) {
+        const t = await res.text().catch(()=> "");
+        console.error("Falha /api/produtos:", res.status, t);
+        alert("Falha ao carregar produtos.");
+        return;
+      }
       const produtos = await res.json();
+      if (!Array.isArray(produtos)) {
+        console.error("Resposta inesperada de /api/produtos:", produtos);
+        alert("Resposta inesperada ao listar produtos.");
+        return;
+      }
       const tbody = document.getElementById("listaProdutos");
       tbody.innerHTML = "";
       produtos.forEach(p=>{
         const tr = document.createElement("tr");
-        tr.dataset.id = p.id; // <- id do backend (Rails)
-        tr.innerHTML = renderLinhaProdutoView(p);
+        const id = String(p.id);
+        tr.dataset.id = id;
+        tr.innerHTML = renderLinhaProdutoView({ ...p, id });
         tbody.appendChild(tr);
       });
     }
 
     function renderLinhaProdutoView(p){
       const img = p.imagem || "https://via.placeholder.com/300x300?text=Produto";
+      const idAttr = escapeAttr(String(p.id));
       return `
-        <td title="${escapeHtml(p.nome)}">${escapeHtml(p.nome)}</td>
+        <td title="${escapeAttr(p.nome)}">${escapeHtml(p.nome)}</td>
         <td>R$ ${moeda(p.preco)}</td>
         <td>${Number(p.estoque)}</td>
         <td><div class="helper">${escapeHtml(img)}</div></td>
         <td>
           <div class="acao-grid">
-            <button class="btn-editar" onclick="editarProduto(${p.id})">Editar</button>
-            <button class="btn-remover" onclick="removerProduto(${p.id})">Excluir</button>
+            <button class="btn-editar" onclick="editarProduto('${idAttr}')">Editar</button>
+            <button class="btn-remover" onclick="removerProduto('${idAttr}')">Excluir</button>
           </div>
         </td>
       `;
     }
 
     function renderLinhaProdutoEdit(p){
-      const valores = estadoEdicao.get(p.id) || { nome:p.nome, preco:p.preco, estoque:p.estoque, imagem:p.imagem || "" };
+      const id = String(p.id);
+      const valores = estadoEdicao.get(id) || { nome:p.nome, preco:p.preco, estoque:p.estoque, imagem:p.imagem || "" };
+      const idAttr = escapeAttr(id);
       return `
         <td>
-          <input type="text" id="edit-nome-${p.id}" value="${escapeAttr(valores.nome)}" placeholder="Nome" />
+          <input type="text" id="edit-nome-${idAttr}" value="${escapeAttr(valores.nome)}" placeholder="Nome" />
         </td>
         <td>
-          <input type="number" id="edit-preco-${p.id}" value="${Number(valores.preco)}" step="0.01" min="0" placeholder="Preço" />
+          <input type="number" id="edit-preco-${idAttr}" value="${Number(valores.preco)}" step="0.01" min="0" placeholder="Preço" />
         </td>
         <td>
-          <input type="number" id="edit-estoque-${p.id}" value="${parseInt(valores.estoque||0)}" min="0" placeholder="Estoque" />
+          <input type="number" id="edit-estoque-${idAttr}" value="${parseInt(valores.estoque||0)}" min="0" placeholder="Estoque" />
         </td>
         <td>
-          <input type="url" id="edit-imagem-${p.id}" value="${escapeAttr(valores.imagem || "")}" placeholder="URL da imagem" />
+          <input type="url" id="edit-imagem-${idAttr}" value="${escapeAttr(valores.imagem || "")}" placeholder="URL da imagem" />
           <div class="helper">Dica: deixe vazio para manter a atual.</div>
         </td>
         <td>
           <div class="acao-grid">
             <button class="btn-salvar" onclick="salvarProduto()">Salvar</button>
-            <button class="btn-cancelar" onclick="cancelarEdicao(${p.id})">Cancelar</button>
+            <button class="btn-cancelar" onclick="cancelarEdicao('${idAttr}')">Cancelar</button>
           </div>
         </td>
       `;
     }
 
     function editarProduto(id){
-      const tr = document.querySelector(`tr[data-id="${id}"]`);
+      id = String(id);
+      const tr = document.querySelector(`tr[data-id="${CSS.escape(id)}"]`);
       if (!tr) return;
       if (tr.classList.contains("editing")) return;
 
-      // captura dados atuais da linha (view)
       const tds = tr.querySelectorAll("td");
       const atual = {
         nome: tds[0].innerText.trim(),
@@ -235,7 +243,6 @@
       tr.classList.add("editing");
       tr.innerHTML = renderLinhaProdutoEdit({ id, ...atual });
 
-      // atalhos
       const inputs = tr.querySelectorAll("input");
       inputs.forEach(inp=>{
         inp.addEventListener("keydown", (e)=>{
@@ -243,26 +250,24 @@
           if (e.key === "Escape") cancelarEdicao(id);
         });
       });
-      tr.querySelector(`#edit-nome-${id}`)?.focus();
+      tr.querySelector(`#edit-nome-${CSS.escape(id)}`)?.focus();
     }
 
     function cancelarEdicao(id){
-      const tr = document.querySelector(`tr[data-id="${id}"]`);
+      id = String(id);
+      const tr = document.querySelector(`tr[data-id="${CSS.escape(id)}"]`);
       if (!tr) return;
       const st = estadoEdicao.get(id);
-      const p = st?.original
-        ? { id, ...st.original }
-        : { id, nome: "-", preco: 0, estoque: 0, imagem: "" };
+      const p = st?.original ? { id, ...st.original } : { id, nome: "-", preco: 0, estoque: 0, imagem: "" };
       tr.classList.remove("editing");
       tr.innerHTML = renderLinhaProdutoView(p);
       estadoEdicao.delete(id);
     }
 
-    // Atualiza SEMPRE usando o id do DOM (data-id da linha em edição)
     async function salvarProduto(){
       const tr = document.querySelector("tr.editing");
       if (!tr) return;
-      const id = Number(tr.dataset.id);
+      const id = String(tr.dataset.id);
       if (!id) { alert("ID do produto não encontrado."); return; }
 
       const nome    = (document.getElementById(`edit-nome-${id}`)?.value || "").trim();
@@ -278,15 +283,13 @@
       if (imagem) payload.imagem = imagem;
 
       try{
-        // PATCH (padrão Rails) + fallback PUT
-        let res = await fetch(`${API.produtos}/${id}`, {
+        let res = await fetch(`${API.produtos}/${encodeURIComponent(id)}`, {
           method:"PATCH",
           headers:{ "Content-Type":"application/json" },
           body: JSON.stringify(payload)
         });
         if (!res.ok) {
-          // fallback para PUT se o host só aceitar PUT
-          res = await fetch(`${API.produtos}/${id}`, {
+          res = await fetch(`${API.produtos}/${encodeURIComponent(id)}`, {
             method:"PUT",
             headers:{ "Content-Type":"application/json" },
             body: JSON.stringify(payload)
@@ -305,7 +308,6 @@
       }
     }
 
-    // Utilitários para escapar HTML
     function escapeHtml(str){
       return String(str).replace(/[&<>"']/g, s => ({
         "&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;","'":"&#39;"
@@ -316,26 +318,36 @@
     }
 
     async function removerProduto(id){
+      id = String(id);
       if(confirm("Excluir?")){
-        await fetch(`${API.produtos}/${id}`, { method:"DELETE" });
+        await fetch(`${API.produtos}/${encodeURIComponent(id)}`, { method:"DELETE" });
         carregarProdutos();
       }
     }
 
-    // Criação de produto
+    // Criação de produto (POST)
     document.getElementById("formProdutos").addEventListener("submit", async e=>{
       e.preventDefault();
       const novo = {
-        nome: nomeProduto.value,
-        preco: parseFloat(precoProduto.value),
-        estoque: parseInt(estoqueProduto.value),
-        imagem: imagemProduto.value || "https://via.placeholder.com/300x300?text=Produto"
+        nome: document.getElementById("nomeProduto").value.trim(),
+        preco: parseFloat(document.getElementById("precoProduto").value),
+        estoque: parseInt(document.getElementById("estoqueProduto").value),
+        imagem: document.getElementById("imagemProduto").value || "https://via.placeholder.com/300x300?text=Produto"
       };
-      await fetch(API.produtos, {
+      if (!novo.nome) return alert("Informe o nome.");
+      if (Number.isNaN(novo.preco) || novo.preco < 0) return alert("Preço inválido.");
+      if (!Number.isInteger(novo.estoque) || novo.estoque < 0) return alert("Estoque inválido.");
+
+      const res = await fetch(API.produtos, {
         method:"POST",
         headers:{ "Content-Type":"application/json" },
         body: JSON.stringify(novo)
       });
+      if (!res.ok) {
+        const t = await res.text().catch(()=> "");
+        alert("Falha ao criar produto: " + t);
+        return;
+      }
       e.target.reset();
       carregarProdutos();
     });
@@ -351,6 +363,7 @@
     let pedidosConhecidos = new Set();
     async function carregarPedidos(){
       const res = await fetch(API.pedidos, { cache:"no-store" });
+      if (!res.ok) return; // rota é protegida por Basic Auth (já está no painel)
       const pedidos = await res.json();
       const tbody = document.getElementById("listaPedidos");
       tbody.innerHTML = "";
@@ -363,24 +376,25 @@
       });
 
       pedidos.forEach(p=>{
+        const id = String(p.id);
         const itens = (p.itens||[]).map(i => `${i.nome} x${i.quantidade}`).join(", ");
         const tr = document.createElement("tr");
         tr.innerHTML = `
-          <td>${p.id}</td>
-          <td>${p.cliente?.nome||"-"}</td>
-          <td>${p.cliente?.endereco||"-"}</td>
+          <td>${escapeHtml(id)}</td>
+          <td>${escapeHtml(p.cliente?.nome||"-")}</td>
+          <td>${escapeHtml(p.cliente?.endereco||"-")}</td>
           <td>${escapeHtml(itens)}</td>
           <td>R$ ${moeda(p.total)}</td>
           <td>${p.pix?"PIX":"Outro"}</td>
           <td>
-            <select onchange="atualizarStatus(${p.id}, this.value)">
+            <select onchange="atualizarStatus('${escapeAttr(id)}', this.value)">
               <option ${p.status==="Pendente"?"selected":""}>Pendente</option>
               <option ${p.status==="Preparando"?"selected":""}>Preparando</option>
               <option ${p.status==="Saiu para entrega"?"selected":""}>Saiu para entrega</option>
               <option ${p.status==="Concluído"?"selected":""}>Concluído</option>
             </select>
           </td>
-          <td><button class="btn-remover" onclick="removerPedido(${p.id})">Excluir</button></td>`;
+          <td><button class="btn-remover" onclick="removerPedido('${escapeAttr(id)}')">Excluir</button></td>`;
         tbody.appendChild(tr);
       });
 
@@ -388,7 +402,8 @@
     }
 
     async function atualizarStatus(id, status){
-      await fetch(`${API.pedidos}/${id}/status`, {
+      id = String(id);
+      await fetch(`${API.pedidos}/${encodeURIComponent(id)}/status`, {
         method:"PUT",
         headers:{ "Content-Type":"application/json" },
         body: JSON.stringify({ status })
@@ -396,8 +411,9 @@
       carregarPedidos();
     }
     async function removerPedido(id){
+      id = String(id);
       if(confirm("Excluir pedido?")){
-        await fetch(`${API.pedidos}/${id}`, { method:"DELETE" });
+        await fetch(`${API.pedidos}/${encodeURIComponent(id)}`, { method:"DELETE" });
         carregarPedidos();
       }
     }
@@ -409,13 +425,11 @@
       carregarPedidos();
       setInterval(carregarPedidos, 5000);
 
-      // Duplo clique numa linha de produto -> editar
       document.getElementById("listaProdutos").addEventListener("dblclick", (e)=>{
         const tr = e.target.closest("tr[data-id]");
-        if (tr) editarProduto(Number(tr.dataset.id));
+        if (tr) editarProduto(String(tr.dataset.id));
       });
     });
   </script>
 </body>
 </html>
-
