@@ -134,13 +134,19 @@ app.get("/debug/telegram/getChat", async (_req, res) => {
 /* ------------------------------- Banco (Postgres) ---------------------------- */
 const { Pool } = require("pg");
 
+// >>> Opção A: sempre força sslmode=no-verify na URL <<<
 function normalizeDbUrl(u) {
   if (!u) return u;
-  if (!/\?.*sslmode=/.test(u)) u += (u.includes("?") ? "&" : "?") + "sslmode=require";
+  // remove qualquer sslmode prévio
+  u = u.replace(/([?&])sslmode=[^&]*/i, "$1").replace(/[?&]$/, "");
+  // adiciona no-verify
+  u += (u.includes("?") ? "&" : "?") + "sslmode=no-verify";
   return u;
 }
+
 const pool = new Pool({
   connectionString: normalizeDbUrl(process.env.DATABASE_URL),
+  // Mantém rejectUnauthorized:false para evitar "self-signed certificate in certificate chain"
   ssl: { rejectUnauthorized: false },
   connectionTimeoutMillis: 5000,
   idleTimeoutMillis: 30000,
@@ -189,7 +195,7 @@ const Produtos = {
       );
       return rows.map(r => ({ ...r, preco: Number(r.preco), estoque: Number(r.estoque) }));
     } catch (e) {
-      // Se a tabela não existir, cria e tenta de novo
+      // cria tabela e tenta de novo se não existir
       if (/relation .*products.* does not exist/i.test(e?.message || "")) {
         await ensureSchema();
         const { rows } = await pool.query(
@@ -429,8 +435,12 @@ async function sendPushToAll(title, body, data = {}) {
 /* -------------------------------- Pedidos ----------------------------------- */
 // admin
 app.get("/api/pedidos", ...adminOnly, async (_req, res) => {
-  try { res.json(await Pedidos.listar()); }
-  catch (e) { res.status(500).json({ error: "Falha ao listar pedidos" }); }
+  try {
+    res.json(await Pedidos.listar());
+  } catch (e) {
+    console.error("[/api/pedidos] erro:", e);
+    res.status(500).json({ error: "Falha ao listar pedidos", detail: e?.message || String(e) });
+  }
 });
 app.get("/api/pedidos/:id", ...adminOnly, async (req, res) => {
   try {
