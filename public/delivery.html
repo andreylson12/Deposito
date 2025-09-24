@@ -51,7 +51,7 @@
     <section id="pagamento">
       <h2>💳 Pagamento via PIX</h2>
       <img id="pixQrCode" src="/qrcode_pix.png" alt="QR Code PIX" />
-      <p>Chave PIX (telefone): <strong id="pixChave">99 991842200</strong></p>
+      <p>Chave PIX (Cnpj): <strong id="pixChave">55160826000100</strong></p>
       <button class="btn" onclick="copiarChave()">📋 Copiar chave PIX</button>
       <p id="msgCopiado" style="display:none;color:green">✅ Chave copiada!</p>
     </section>
@@ -130,7 +130,7 @@
           const s = document.getElementById("pagamento"); s.style.display="block";
           // Mostra o QRCode (ok) e **somente** a chave telefone
           document.getElementById("pixQrCode").src = salvo.pix.qrCodeImage || "/qrcode_pix.png";
-          document.getElementById("pixChave").textContent = salvo.pix.chave || "99 991842200";
+          document.getElementById("pixChave").textContent = salvo.pix.chave || "55160826000100";
         } else {
           document.getElementById("pagamento").style.display="none";
         }
@@ -159,3 +159,4 @@
   </script>
 </body>
 </html>
+
