@@ -162,30 +162,48 @@
     const moeda = n => Number(n).toFixed(2).replace('.', ',');
     let carrinho = [];
 
+    // >>>>>>>>>>>>> ALTERAÇÃO AQUI: função defensiva <<<<<<<<<<<<<
     async function carregarProdutos(){
-      const res = await fetch("/api/produtos", { cache:"no-store" });
-      const produtos = await res.json();
-      const el = document.getElementById("listaProdutos");
-      el.innerHTML = "";
+      try {
+        const res = await fetch("/api/produtos", { cache:"no-store" });
+        if (!res.ok) {
+          const txt = await res.text();
+          console.error("Falha /api/produtos:", res.status, txt);
+          alert("Falha ao carregar produtos. Tente atualizar a página.");
+          return;
+        }
+        const produtos = await res.json();
+        if (!Array.isArray(produtos)) {
+          console.error("Resposta inesperada de /api/produtos:", produtos);
+          alert("Resposta inesperada ao listar produtos.");
+          return;
+        }
 
-      produtos
-        .filter(p => Number(p.estoque) > 0)
-        .forEach(p => {
-          const img = p.imagem || "https://via.placeholder.com/300x300?text=Produto";
-          const card = document.createElement("div");
-          card.className = "card";
-          card.innerHTML = `
-            <img src="${img}" alt="${p.nome}">
-            <h3>${p.nome}</h3>
-            <p>R$ ${moeda(p.preco)}</p>
-            <p>Estoque: ${p.estoque}</p>
-            <button class="btn btn-add"
-                    data-id="${String(p.id)}"
-                    data-nome="${String(p.nome).replace(/"/g,'&quot;')}"
-                    data-preco="${Number(p.preco)}">Adicionar</button>
-          `;
-          el.appendChild(card);
-        });
+        const el = document.getElementById("listaProdutos");
+        el.innerHTML = "";
+
+        produtos
+          .filter(p => Number(p.estoque) > 0)
+          .forEach(p => {
+            const img = p.imagem || "https://via.placeholder.com/300x300?text=Produto";
+            const card = document.createElement("div");
+            card.className = "card";
+            card.innerHTML = `
+              <img src="${img}" alt="${p.nome}">
+              <h3>${p.nome}</h3>
+              <p>R$ ${Number(p.preco).toFixed(2).replace('.', ',')}</p>
+              <p>Estoque: ${p.estoque}</p>
+              <button class="btn btn-add"
+                      data-id="${String(p.id)}"
+                      data-nome="${String(p.nome).replace(/"/g,'&quot;')}"
+                      data-preco="${Number(p.preco)}">Adicionar</button>
+            `;
+            el.appendChild(card);
+          });
+      } catch (e) {
+        console.error("Erro inesperado em carregarProdutos()", e);
+        alert("Erro de rede ao listar produtos.");
+      }
     }
 
     function adicionar(id, nome, preco){
