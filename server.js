@@ -181,8 +181,26 @@ function newId() {
 /* ------------------------------- DAO Produtos -------------------------------- */
 const Produtos = {
   async listar() {
-    const { rows } = await pool.query(`SELECT id, nome, preco, estoque, imagem FROM products ORDER BY created_at DESC`);
-    return rows.map(r => ({ ...r, preco: Number(r.preco), estoque: Number(r.estoque) }));
+    try {
+      const { rows } = await pool.query(
+        `SELECT id, nome, preco, estoque, imagem
+           FROM products
+         ORDER BY created_at DESC`
+      );
+      return rows.map(r => ({ ...r, preco: Number(r.preco), estoque: Number(r.estoque) }));
+    } catch (e) {
+      // Se a tabela não existir, cria e tenta de novo
+      if (/relation .*products.* does not exist/i.test(e?.message || "")) {
+        await ensureSchema();
+        const { rows } = await pool.query(
+          `SELECT id, nome, preco, estoque, imagem
+             FROM products
+           ORDER BY created_at DESC`
+        );
+        return rows.map(r => ({ ...r, preco: Number(r.preco), estoque: Number(r.estoque) }));
+      }
+      throw e;
+    }
   },
   async criar(data) {
     const id = newId();
@@ -324,8 +342,16 @@ app.get("/api/pix/:valor/:txid?", async (req, res) => {
 /* ------------------------------- Produtos ----------------------------------- */
 // público
 app.get("/api/produtos", async (_req, res) => {
-  try { res.json(await Produtos.listar()); }
-  catch (e) { console.error(e); res.status(500).json({ error: "Falha ao listar produtos" }); }
+  try {
+    const out = await Produtos.listar();
+    res.json(out);
+  } catch (e) {
+    console.error("[/api/produtos] erro:", e);
+    res.status(500).json({
+      error: "Falha ao listar produtos",
+      detail: e?.message || String(e)
+    });
+  }
 });
 // admin
 app.post("/api/produtos", ...adminOnly, async (req, res) => {
@@ -546,6 +572,54 @@ app.post("/api/restore", ...adminOnly, async (req, res) => {
     res.status(500).json({ error: "Erro ao restaurar", detalhe: err.message });
   } finally {
     client.release();
+  }
+});
+
+/* -------------------- DEBUG DB (endpoints utilitários) ---------------------- */
+app.get("/debug/db-ping", async (_req, res) => {
+  try {
+    const { rows } = await pool.query("SELECT now()");
+    res.json({ ok: true, now: rows[0].now });
+  } catch (e) {
+    res.status(500).json({ ok: false, error: e?.message || String(e) });
+  }
+});
+app.post("/debug/db-ensure", async (_req, res) => {
+  try {
+    await ensureSchema();
+    res.json({ ok: true });
+  } catch (e) {
+    res.status(500).json({ ok: false, error: e?.message || String(e) });
+  }
+});
+app.get("/debug/db-tables", async (_req, res) => {
+  try {
+    const q = `
+      SELECT table_name
+      FROM information_schema.tables
+      WHERE table_schema='public'
+      ORDER BY table_name;
+    `;
+    const { rows } = await pool.query(q);
+    res.json({ ok: true, tables: rows.map(r => r.table_name) });
+  } catch (e) {
+    res.status(500).json({ ok: false, error: e?.message || String(e) });
+  }
+});
+app.get("/debug/db-counts", async (_req, res) => {
+  try {
+    const out = {};
+    for (const t of ["products","pedidos","push_subs"]) {
+      try {
+        const r = await pool.query(`SELECT COUNT(*)::int AS n FROM ${t}`);
+        out[t] = r.rows[0].n;
+      } catch (e) {
+        out[t] = `ERRO: ${e?.message || e}`;
+      }
+    }
+    res.json({ ok: true, counts: out });
+  } catch (e) {
+    res.status(500).json({ ok: false, error: e?.message || String(e) });
   }
 });
 
