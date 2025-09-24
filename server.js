@@ -38,7 +38,7 @@ app.use(express.json({ limit: "5mb" })); // aceita até ~5MB de JSON (para resto
 app.use(
   cors({
     origin: true,
-    methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+    methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"], // 👈 inclui PATCH
     credentials: true,
   })
 );
@@ -113,9 +113,10 @@ function saveDB(db) {
 }
 
 /* -------------------------------- Config PIX -------------------------------- */
-const chavePix = "99 991842200";     // <- sua chave telefone
-const nomeLoja = "ANDREYLSON SODRE";
-const cidade   = "SAMBAIBA";
+// ⚠️ Se quiser usar CNPJ em vez de telefone, troque a chave aqui:
+const chavePix = "55160826000100";   // CNPJ SEM máscara
+const nomeLoja = "RS LUBRIFICANTES"; // máx ~25 chars (ok)
+const cidade   = "SAMBAIBA";         // máx ~15 chars (ok)
 
 /* ----------------------------- Push Web (opcional) --------------------------- */
 const VAPID_PUBLIC  = process.env.VAPID_PUBLIC_KEY  || "";
@@ -271,9 +272,58 @@ app.post("/api/produtos", ...adminOnly, (req, res) => {
 app.delete("/api/produtos/:id", ...adminOnly, (req, res) => {
   const db = loadDB();
   const id = Number(req.params.id);
+  const before = db.produtos.length;
   db.produtos = db.produtos.filter((p) => p.id !== id);
   saveDB(db);
+  if (db.produtos.length === before) {
+    return res.status(404).json({ error: "Produto não encontrado" });
+  }
   res.json({ success: true });
+});
+
+/** 🔧 UPDATE helper: atualiza campos permitidos e salva DB */
+function updateProdutoById(db, id, patch) {
+  id = Number(id);
+  const idx = db.produtos.findIndex((p) => p.id === id);
+  if (idx === -1) return null;
+
+  const base = db.produtos[idx];
+  const upd = {
+    ...base,
+    ...(patch.nome    !== undefined ? { nome: String(patch.nome) } : {}),
+    ...(patch.preco   !== undefined ? { preco: Number(patch.preco) || 0 } : {}),
+    ...(patch.estoque !== undefined ? { estoque: parseInt(patch.estoque) || 0 } : {}),
+    ...(patch.imagem  !== undefined ? { imagem: patch.imagem || "" } : {}),
+  };
+
+  db.produtos[idx] = upd;
+  saveDB(db);
+  return upd;
+}
+
+// ✅ EDITAR produto — aceita PATCH e PUT
+app.patch("/api/produtos/:id", ...adminOnly, (req, res) => {
+  const db = loadDB();
+  const upd = updateProdutoById(db, req.params.id, req.body || {});
+  if (!upd) return res.status(404).json({ error: "Produto não encontrado" });
+  res.json(upd);
+});
+
+app.put("/api/produtos/:id", ...adminOnly, (req, res) => {
+  const db = loadDB();
+  const upd = updateProdutoById(db, req.params.id, req.body || {});
+  if (!upd) return res.status(404).json({ error: "Produto não encontrado" });
+  res.json(upd);
+});
+
+// ✅ Fallback: alguns fronts usam POST /api/produtos/update
+app.post("/api/produtos/update", ...adminOnly, (req, res) => {
+  const { id, ...rest } = req.body || {};
+  if (!id) return res.status(400).json({ error: "id obrigatório" });
+  const db = loadDB();
+  const upd = updateProdutoById(db, id, rest);
+  if (!upd) return res.status(404).json({ error: "Produto não encontrado" });
+  res.json(upd);
 });
 
 /* -------------------------------- Pedidos ----------------------------------- */
@@ -325,6 +375,7 @@ app.post("/api/pedidos", async (req, res) => {
         );
       }
     }
+    saveDB(db);
   }
 
   // gera PIX
