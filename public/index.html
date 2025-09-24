@@ -17,11 +17,20 @@
     table{ border-collapse:collapse; width:100%; background:#2c3e50; }
     th, td{ padding:8px; border:1px solid #444; vertical-align: top; text-align:center; }
     input, button, select{ padding:8px; margin:5px 0; border-radius:6px; border:none; }
+    input[type="number"]{ width:120px; }
+    input[type="url"], input[type="text"]{ width:100%; max-width:360px; }
     button{ background:#27ae60; color:#fff; cursor:pointer; }
     button:hover{ background:#219150; }
     .btn-remover{ background:#e74c3c; }
+    .btn-editar{ background:#2980b9; }
+    .btn-cancelar{ background:#7f8c8d; }
+    .btn-salvar{ background:#27ae60; }
+    .acao-grid{ display:flex; gap:8px; justify-content:center; flex-wrap:wrap; }
     /* Rodapé com a soma */
     .total-row td{font-weight:700;background:#152536;color:#fff}
+    /* Estado de edição */
+    tr.editing{ background:#24394d; }
+    .helper{ color:#bbb; font-size:12px; margin-top:2px; }
   </style>
 </head>
 <body>
@@ -43,9 +52,14 @@
         <input id="estoqueProduto" type="number" placeholder="Estoque" required />
         <input id="imagemProduto" placeholder="URL da Imagem" />
         <button type="submit">Salvar</button>
+        <div class="helper">Dica: você também pode editar produtos direto na tabela abaixo.</div>
       </form>
       <table>
-        <thead><tr><th>Nome</th><th>Preço</th><th>Estoque</th><th>Ações</th></tr></thead>
+        <thead>
+          <tr>
+            <th>Nome</th><th>Preço</th><th>Estoque</th><th>Imagem (URL)</th><th>Ações</th>
+          </tr>
+        </thead>
         <tbody id="listaProdutos"></tbody>
       </table>
     </section>
@@ -148,6 +162,9 @@
     }
 
     // ---------------- Produtos ----------------
+    // Estado em memória para edição
+    const estadoEdicao = new Map(); // id -> { nome, preco, estoque, imagem, original }
+
     async function carregarProdutos(){
       const res = await fetch(API.produtos, { cache:"no-store" });
       const produtos = await res.json();
@@ -155,20 +172,149 @@
       tbody.innerHTML = "";
       produtos.forEach(p=>{
         const tr = document.createElement("tr");
-        tr.innerHTML = `
-          <td>${p.nome}</td>
-          <td>R$ ${moeda(p.preco)}</td>
-          <td>${p.estoque}</td>
-          <td><button class="btn-remover" onclick="removerProduto(${p.id})">Excluir</button></td>`;
+        tr.dataset.id = p.id;
+        tr.innerHTML = renderLinhaProdutoView(p);
         tbody.appendChild(tr);
       });
     }
+
+    function renderLinhaProdutoView(p){
+      const img = p.imagem || "https://via.placeholder.com/300x300?text=Produto";
+      return `
+        <td title="${p.nome}">${p.nome}</td>
+        <td>R$ ${moeda(p.preco)}</td>
+        <td>${p.estoque}</td>
+        <td style="word-break:break-all">
+          <div class="helper">${img}</div>
+        </td>
+        <td>
+          <div class="acao-grid">
+            <button class="btn-editar" onclick="editarProduto(${p.id})">Editar</button>
+            <button class="btn-remover" onclick="removerProduto(${p.id})">Excluir</button>
+          </div>
+        </td>
+      `;
+    }
+
+    function renderLinhaProdutoEdit(p){
+      // Preenche com os valores atuais
+      const valores = estadoEdicao.get(p.id) || { nome:p.nome, preco:p.preco, estoque:p.estoque, imagem:p.imagem || "" };
+      return `
+        <td>
+          <input type="text" id="edit-nome-${p.id}" value="${escapeHtml(valores.nome)}" placeholder="Nome" />
+        </td>
+        <td>
+          <input type="number" id="edit-preco-${p.id}" value="${Number(valores.preco)}" step="0.01" min="0" placeholder="Preço" />
+        </td>
+        <td>
+          <input type="number" id="edit-estoque-${p.id}" value="${parseInt(valores.estoque||0)}" min="0" placeholder="Estoque" />
+        </td>
+        <td>
+          <input type="url" id="edit-imagem-${p.id}" value="${escapeHtml(valores.imagem || "")}" placeholder="URL da imagem" />
+          <div class="helper">Dica: deixe vazio para manter a atual.</div>
+        </td>
+        <td>
+          <div class="acao-grid">
+            <button class="btn-salvar" onclick="salvarProduto(${p.id})">Salvar</button>
+            <button class="btn-cancelar" onclick="cancelarEdicao(${p.id})">Cancelar</button>
+          </div>
+        </td>
+      `;
+    }
+
+    function editarProduto(id){
+      const tr = document.querySelector(`tr[data-id="${id}"]`);
+      if (!tr) return;
+      if (tr.classList.contains("editing")) return;
+
+      // Captura os dados atuais para possível cancelamento
+      const tds = tr.querySelectorAll("td");
+      const atual = {
+        nome: tds[0].innerText.trim(),
+        preco: parseFloat((tds[1].innerText || "0").replace(/[^\d,.-]/g,"").replace(".","").replace(",", ".")) || 0,
+        estoque: parseInt(tds[2].innerText) || 0,
+        imagem: (tds[3].querySelector(".helper")?.textContent || "").trim()
+      };
+      estadoEdicao.set(id, { ...atual, original: atual });
+
+      // Troca para modo edição
+      tr.classList.add("editing");
+      tr.innerHTML = renderLinhaProdutoEdit({ id, ...atual });
+
+      // Atalhos Enter/Escape
+      const inputs = tr.querySelectorAll("input");
+      inputs.forEach(inp=>{
+        inp.addEventListener("keydown", (e)=>{
+          if (e.key === "Enter") salvarProduto(id);
+          if (e.key === "Escape") cancelarEdicao(id);
+        });
+      });
+
+      // Foco no primeiro campo
+      tr.querySelector(`#edit-nome-${id}`)?.focus();
+    }
+
+    function cancelarEdicao(id){
+      const tr = document.querySelector(`tr[data-id="${id}"]`);
+      if (!tr) return;
+      const st = estadoEdicao.get(id);
+      const p = st?.original
+        ? { id, ...st.original }
+        : { id, nome: "-", preco: 0, estoque: 0, imagem: "" };
+      tr.classList.remove("editing");
+      tr.innerHTML = renderLinhaProdutoView(p);
+      estadoEdicao.delete(id);
+    }
+
+    async function salvarProduto(id){
+      const tr = document.querySelector(`tr[data-id="${id}"]`);
+      if (!tr) return;
+
+      // Coleta valores dos inputs
+      const nome = (document.getElementById(`edit-nome-${id}`)?.value || "").trim();
+      const preco = parseFloat(document.getElementById(`edit-preco-${id}`)?.value || "0");
+      const estoque = parseInt(document.getElementById(`edit-estoque-${id}`)?.value || "0");
+      const imagem = (document.getElementById(`edit-imagem-${id}`)?.value || "").trim();
+
+      // Validações básicas
+      if (!nome) return alert("Informe o nome.");
+      if (Number.isNaN(preco) || preco < 0) return alert("Preço inválido.");
+      if (!Number.isInteger(estoque) || estoque < 0) return alert("Estoque inválido.");
+
+      const payload = { nome, preco, estoque };
+      if (imagem) payload.imagem = imagem; // só envia imagem se informado
+
+      try{
+        const res = await fetch(`${API.produtos}/${id}`, {
+          method:"PUT",
+          headers:{ "Content-Type":"application/json" },
+          body: JSON.stringify(payload)
+        });
+        if (!res.ok) throw new Error("Falha ao atualizar produto");
+        // recarrega a lista para refletir todas as colunas corretamente
+        await carregarProdutos();
+      }catch(e){
+        console.error(e);
+        alert("Erro ao salvar. Tente novamente.");
+      }finally{
+        estadoEdicao.delete(id);
+      }
+    }
+
+    // Utilitário simples para escapar HTML ao montar inputs
+    function escapeHtml(str){
+      return String(str).replace(/[&<>"']/g, s => ({
+        "&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;","'":"&#39;"
+      }[s]));
+    }
+
     async function removerProduto(id){
       if(confirm("Excluir?")){
         await fetch(`${API.produtos}/${id}`, { method:"DELETE" });
         carregarProdutos();
       }
     }
+
     document.getElementById("formProdutos").addEventListener("submit", async e=>{
       e.preventDefault();
       const novo = {
@@ -255,6 +401,12 @@
       carregarProdutos();
       carregarPedidos();
       setInterval(carregarPedidos, 5000);
+
+      // Atalho: duplo clique numa linha de produto -> editar
+      document.getElementById("listaProdutos").addEventListener("dblclick", (e)=>{
+        const tr = e.target.closest("tr[data-id]");
+        if (tr) editarProduto(Number(tr.dataset.id));
+      });
     });
   </script>
 </body>
