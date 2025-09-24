@@ -38,7 +38,7 @@ app.use(express.json({ limit: "5mb" })); // aceita até ~5MB de JSON (para resto
 app.use(
   cors({
     origin: true,
-    methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"], // inclui PATCH
+    methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"], // 👈 inclui PATCH
     credentials: true,
   })
 );
@@ -538,44 +538,7 @@ app.post("/api/restore", ...adminOnly, (req, res) => {
   }
 });
 
-/* ============================== DIAGNÓSTICO ================================= */
-// Requer basic auth (usa ...adminOnly)
-app.get("/api/debug-storage", ...adminOnly, (_req, res) => {
-  try {
-    const DBFILE = process.env.DB_FILE || path.join(__dirname, "db.json");
-    const dir = path.dirname(DBFILE);
-    const existsDir = fs.existsSync(dir);
-    const existsFile = fs.existsSync(DBFILE);
-    let canWrite = false, testError = null;
-    try {
-      fs.mkdirSync(dir, { recursive: true });
-      const probe = path.join(dir, ".write-test-" + Date.now());
-      fs.writeFileSync(probe, "ok");
-      fs.unlinkSync(probe);
-      canWrite = true;
-    } catch (e) { testError = e.message; }
-    res.json({ DB_FILE: DBFILE, dir, existsDir, existsFile, canWrite, testError });
-  } catch (e) {
-    res.status(500).json({ error: e.message });
-  }
-});
-
-app.get("/api/debug-env", ...adminOnly, (_req, res) => {
-  res.json({
-    ADMIN_USER: !!process.env.ADMIN_USER,
-    ADMIN_PASS: !!process.env.ADMIN_PASS,
-    DB_FILE: process.env.DB_FILE || "(padrão em ./db.json)",
-    DEBUG_TOKEN: !!process.env.DEBUG_TOKEN,
-    TELEGRAM_BOT_TOKEN: !!process.env.TELEGRAM_BOT_TOKEN,
-    TELEGRAM_CHAT_ID: !!process.env.TELEGRAM_CHAT_ID,
-    VAPID_PUBLIC_KEY: !!process.env.VAPID_PUBLIC_KEY,
-    VAPID_PRIVATE_KEY: !!process.env.VAPID_PRIVATE_KEY
-  });
-});
-/* ============================================================================ */
-
 /* --------------------------------- Start ------------------------------------ */
 app.listen(PORT, "0.0.0.0", () => {
   console.log(`Servidor rodando na porta ${PORT}`);
-  console.log("[storage] DB_FILE:", process.env.DB_FILE || path.join(__dirname, "db.json"));
 });
