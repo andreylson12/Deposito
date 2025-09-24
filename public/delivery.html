@@ -12,15 +12,21 @@
     .card img{max-width:100%;border-radius:6px;height:150px;object-fit:cover}
     .btn{background:#27ae60;color:#fff;border:none;padding:8px 12px;border-radius:5px;cursor:pointer}
     .btn:hover{background:#219150}
+    .btn[disabled]{opacity:.5;cursor:not-allowed}
     #carrinho{background:#fff;padding:15px;border-radius:8px;margin:20px;box-shadow:0 2px 5px rgba(0,0,0,.2)}
     table{width:100%;border-collapse:collapse;margin-bottom:10px}
     th,td{padding:8px;border-bottom:1px solid #ddd;text-align:center}
     .btn-finalizar{width:100%;padding:12px;background:#3498db;color:#fff;border:none;border-radius:6px;font-size:16px;cursor:pointer}
     .btn-finalizar[disabled]{opacity:.65;cursor:not-allowed}
     #pagamento{text-align:center;margin:20px;display:none}
-    #pixQr{width:220px;height:220px;margin:10px auto}
+    #pixQr{width:220px;height:220px;margin:10px auto;position:relative}
+    #pixTimer{margin:6px auto 0;font-weight:bold;color:#c0392b}
+    .row-btns{display:flex;gap:10px;justify-content:center;flex-wrap:wrap;margin-top:8px}
     input,select{width:100%;padding:10px;margin:5px 0;border:1px solid #ccc;border-radius:5px}
+    .muted{color:#666;font-size:13px;margin-top:6px}
+    .expired{color:#c0392b;font-weight:bold}
   </style>
+  <!-- QR Code no navegador -->
   <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js" defer></script>
 </head>
 <body>
@@ -53,25 +59,41 @@
       <button id="btnFinalizar" class="btn-finalizar" onclick="finalizarPedido()">Finalizar Pedido</button>
     </section>
 
+    <!-- PIX com CNPJ + valor travado + cópias + timer -->
     <section id="pagamento">
       <h2>💳 Pagamento via PIX</h2>
       <div id="pixQr"></div>
+      <p id="pixTimer" class="muted"></p>
       <p>Chave PIX (CNPJ): <strong id="pixChave">00.000.000/0000-00</strong></p>
-      <button class="btn" onclick="copiarChave()">📋 Copiar chave PIX</button>
+      <div class="row-btns">
+        <button id="btnCopiarChave" class="btn" onclick="copiarChave()">📋 Copiar chave PIX</button>
+        <button id="btnCopiarPayload" class="btn" onclick="copiarPayload()">📋 Copiar código PIX (copia e cola)</button>
+        <button id="btnCopiarValor" class="btn" onclick="copiarValor()">📋 Copiar valor</button>
+      </div>
       <p id="msgCopiado" style="display:none;color:green">✅ Chave copiada!</p>
-      <details style="max-width:520px;margin:10px auto;color:#555">
+      <p id="msgCopiadoPayload" style="display:none;color:green">✅ Código PIX copiado!</p>
+      <p id="msgCopiadoValor" style="display:none;color:green">✅ Valor copiado!</p>
+      <details style="max-width:560px;margin:10px auto;color:#555">
         <summary>Ver payload EMV</summary>
         <pre id="pixPayload" style="white-space:pre-wrap;word-wrap:break-word;text-align:left;background:#fafafa;border:1px solid #eee;padding:10px;border-radius:6px"></pre>
       </details>
+      <p class="muted">Se o QR expirar, finalize o pedido novamente para gerar um novo.</p>
     </section>
   </main>
 
   <script>
-    // ================= CONFIG FIXA =================
-    const PIX_CHAVE_CNPJ_NUM = "55160826000100"; // CNPJ (apenas números)
-    const MERCHANT_NAME = "RS LUBRIFICANTES";    // até 25 caracteres
-    const MERCHANT_CITY = "SAMBAIBA";            // até 15 caracteres
-    // ===============================================
+    // ======= CONFIG FIXA =======
+    const PIX_CHAVE_CNPJ_NUM = "55160826000100";
+    const MERCHANT_NAME = "RS LUBRIFICANTES"; // máx 25 chars
+    const MERCHANT_CITY = "SAMBAIBA";         // máx 15 chars
+    const QR_EXPIRY_MINUTES = 10;             // ⏳ tempo de expiração do QR
+    // ===========================
+
+    // Estado do PIX
+    let _lastPixPayload = "";
+    let _lastTotal = 0;
+    let _qrTimerId = null;
+    let _qrExpireAt = 0;
 
     function formatCNPJ(cnpj) {
       const n = (cnpj || "").replace(/\D/g, "").slice(0,14);
@@ -84,9 +106,7 @@
       if (s.length !== 14 || /^(\d)\1+$/.test(s)) return false;
       const calc = (base) => {
         let sum = 0, pos = base.length - 7;
-        for (let i=0;i<base.length;i++) {
-          sum += +base[i] * pos--; if (pos < 2) pos = 9;
-        }
+        for (let i=0;i<base.length;i++) { sum += +base[i] * pos--; if (pos < 2) pos = 9; }
         const res = sum % 11 < 2 ? 0 : 11 - (sum % 11);
         return res;
       };
@@ -113,23 +133,23 @@
       return crc.toString(16).toUpperCase().padStart(4,'0');
     }
 
-    // Payload EMV com valor travado (campo 54 sempre presente)
+    // Payload EMV com valor travado
     function buildPixPayload({ chave, nome, cidade, valor, txid, descricao }) {
-      const payloadFormat = tlv("00", "01"); // indicador
-      const poiMethod    = tlv("01", "11");  // estático com dados (não URL)
+      const payloadFormat = tlv("00", "01");
+      const poiMethod    = tlv("01", "11");
 
       const gui   = tlv("00", "br.gov.bcb.pix");
       const k     = tlv("01", chave);
       const desc  = descricao ? tlv("02", sanitizeText(descricao, 99)) : "";
-      const mai   = tlv("26", gui + k + desc); // Merchant Account Info
+      const mai   = tlv("26", gui + k + desc);
 
       const mcc      = tlv("52", "0000");
       const currency = tlv("53", "986");
-      const amount   = tlv("54", Number(valor).toFixed(2)); // **valor travado**
+      const amount   = tlv("54", Number(valor).toFixed(2)); // valor travado
       const country  = tlv("58", "BR");
       const mName    = tlv("59", sanitizeText(nome, 25));
       const mCity    = tlv("60", sanitizeText(cidade, 15));
-      const addData  = tlv("62", tlv("05", sanitizeText(txid, 25))); // txid
+      const addData  = tlv("62", tlv("05", sanitizeText(txid, 25)));
 
       const semCRC = payloadFormat + poiMethod + mai + mcc + currency + amount + country + mName + mCity + addData + "6304";
       const crc = crc16CCITT(semCRC);
@@ -178,6 +198,39 @@
       document.getElementById("totalCarrinho").textContent = "Total: R$ " + moeda(total);
     }
 
+    // ===== Timer do QR =====
+    function setPixUiEnabled(enabled){
+      document.getElementById("btnCopiarChave").disabled   = !enabled;
+      document.getElementById("btnCopiarPayload").disabled = !enabled;
+      document.getElementById("btnCopiarValor").disabled   = !enabled;
+    }
+
+    function startQrTimer(minutes){
+      // limpa timer anterior
+      if (_qrTimerId){ clearInterval(_qrTimerId); _qrTimerId = null; }
+      const msTotal = minutes * 60 * 1000;
+      _qrExpireAt = Date.now() + msTotal;
+      setPixUiEnabled(true);
+      const timerEl = document.getElementById("pixTimer");
+      const tick = ()=>{
+        const remain = _qrExpireAt - Date.now();
+        if (remain <= 0){
+          clearInterval(_qrTimerId); _qrTimerId = null;
+          timerEl.textContent = "QR expirado";
+          timerEl.classList.add("expired");
+          setPixUiEnabled(false);
+          return;
+        }
+        const s = Math.floor(remain/1000);
+        const mm = String(Math.floor(s/60)).padStart(2,"0");
+        const ss = String(s%60).padStart(2,"0");
+        timerEl.textContent = `Expira em ${mm}:${ss}`;
+        timerEl.classList.remove("expired");
+      };
+      tick();
+      _qrTimerId = setInterval(tick, 1000);
+    }
+
     async function finalizarPedido(){
       if(!carrinho.length) return alert("Carrinho vazio!");
       const btn = document.getElementById("btnFinalizar"); btn.disabled = true;
@@ -192,11 +245,13 @@
         }
 
         const total = carrinho.reduce((s,i)=>s+i.preco*i.quantidade,0);
+        _lastTotal = Number(total.toFixed(2));
+
         const pedido = {
           id: Date.now(),
           cliente: { nome, endereco },
           itens: carrinho.map(i=>({ id:i.id, nome:i.nome, preco:i.preco, quantidade:i.quantidade })),
-          total: Number(total.toFixed(2)),
+          total: _lastTotal,
           pagamento,
           pix: pagamento === "PIX" ? { tipoChave: "CNPJ", chave: PIX_CHAVE_CNPJ_NUM } : null,
           status: "Pendente"
@@ -213,34 +268,39 @@
           const sec = document.getElementById("pagamento");
           sec.style.display = "block";
 
-          // CNPJ exibido
           document.getElementById("pixChave").textContent = formatCNPJ(PIX_CHAVE_CNPJ_NUM);
 
-          // Gera TXID e descrição
           const txid = ("RS" + (salvo?.id ?? pedido.id)).slice(0,25);
           const descricao = `Pedido ${(salvo?.id ?? pedido.id)}`;
 
-          // Payload EMV com valor travado (campo 54)
           const payload = buildPixPayload({
             chave: PIX_CHAVE_CNPJ_NUM,
             nome: MERCHANT_NAME,
             cidade: MERCHANT_CITY,
-            valor: Number(total).toFixed(2),
+            valor: _lastTotal, // valor travado
             txid,
             descricao
           });
+
+          // Guarda payload para o botão "copiar"
+          _lastPixPayload = payload;
 
           // QR Code
           const qrEl = document.getElementById("pixQr");
           qrEl.innerHTML = "";
           new QRCode(qrEl, { text: payload, width: 220, height: 220 });
 
+          // Exibe payload (opcional)
           document.getElementById("pixPayload").textContent = payload;
+
+          // Inicia/renova o timer de expiração
+          startQrTimer(QR_EXPIRY_MINUTES);
         } else {
           document.getElementById("pagamento").style.display="none";
+          if (_qrTimerId){ clearInterval(_qrTimerId); _qrTimerId = null; }
         }
 
-        alert("Pedido realizado! ID: " + (salvo.id ?? pedido.id) + " — Total: R$ " + moeda(total));
+        alert("Pedido realizado! ID: " + (salvo.id ?? pedido.id) + " — Total: R$ " + moeda(_lastTotal));
         carrinho = []; render();
       }catch(e){
         console.error(e);
@@ -250,10 +310,41 @@
       }
     }
 
+    // Copia apenas dígitos da chave CNPJ
     function copiarChave(){
+      if (Date.now() > _qrExpireAt) return; // bloqueia se expirado
       const raw = document.getElementById("pixChave").textContent.replace(/\D/g,"");
       navigator.clipboard.writeText(raw).then(()=>{
         const msg = document.getElementById("msgCopiado");
+        msg.style.display="block";
+        setTimeout(()=>msg.style.display="none", 3000);
+      });
+    }
+
+    // Copia o payload EMV (copia e cola)
+    function copiarPayload(){
+      if (Date.now() > _qrExpireAt) return;
+      if(!_lastPixPayload){
+        const txt = document.getElementById("pixPayload").textContent.trim();
+        if (txt) _lastPixPayload = txt;
+      }
+      if(!_lastPixPayload){
+        alert("Gere o QR (finalize o pedido com PIX) antes de copiar o código.");
+        return;
+      }
+      navigator.clipboard.writeText(_lastPixPayload).then(()=>{
+        const msg = document.getElementById("msgCopiadoPayload");
+        msg.style.display="block";
+        setTimeout(()=>msg.style.display="none", 3000);
+      });
+    }
+
+    // Copia o valor do pedido no formato brasileiro (R$ 0,00)
+    function copiarValor(){
+      if (Date.now() > _qrExpireAt) return;
+      const texto = "R$ " + moeda(_lastTotal);
+      navigator.clipboard.writeText(texto).then(()=>{
+        const msg = document.getElementById("msgCopiadoValor");
         msg.style.display="block";
         setTimeout(()=>msg.style.display="none", 3000);
       });
