@@ -30,7 +30,7 @@
     .total-row td{font-weight:700;background:#152536;color:#fff}
     /* Estado de edição */
     tr.editing{ background:#24394d; }
-    .helper{ color:#bbb; font-size:12px; margin-top:2px; }
+    .helper{ color:#bbb; font-size:12px; margin-top:2px; word-break:break-all; }
   </style>
 </head>
 <body>
@@ -99,7 +99,7 @@
     }
     const moeda = n => Number(n).toFixed(2).replace('.', ',');
 
-    // Service Worker + Push (opcional)
+    // ---------------- Service Worker + Push (opcional) ----------------
     let swReg = null;
     async function registrarServiceWorker() {
       if ("serviceWorker" in navigator) {
@@ -117,15 +117,17 @@
       const rawData = atob(base64);
       return Uint8Array.from([...rawData].map(c => c.charCodeAt(0)));
     }
+    // Silencia quando não há endpoint/chave pública
     async function inscreverPush() {
       if (!("serviceWorker" in navigator) || !("PushManager" in window)) return;
       try {
         const keyRes = await fetch("/api/push/public-key");
+        if (!keyRes.ok) return;
         const { publicKey } = await keyRes.json();
-        if (!publicKey) { console.warn("PublicKey não disponível."); return; }
+        if (!publicKey) return;
 
         const perm = await Notification.requestPermission();
-        if (perm !== "granted") { console.warn("Permissão de notificação negada."); return; }
+        if (perm !== "granted") return;
 
         const reg = swReg || (await navigator.serviceWorker.ready);
         const sub = await reg.pushManager.subscribe({
@@ -138,10 +140,7 @@
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify(sub)
         });
-        console.log("[push] inscrito com sucesso.");
-      } catch (e) {
-        console.warn("[push] erro:", e);
-      }
+      } catch (_) { /* silencioso */ }
     }
     function notificarBanner(p) {
       if (!("Notification" in window) || Notification.permission !== "granted") return;
@@ -161,8 +160,7 @@
       }
     }
 
-    // ---------------- Produtos ----------------
-    // Estado em memória para edição
+    // ---------------- Produtos (com edição inline estável) ----------------
     const estadoEdicao = new Map(); // id -> { nome, preco, estoque, imagem, original }
 
     async function carregarProdutos(){
@@ -172,7 +170,7 @@
       tbody.innerHTML = "";
       produtos.forEach(p=>{
         const tr = document.createElement("tr");
-        tr.dataset.id = p.id;
+        tr.dataset.id = p.id; // <- id do backend (Rails)
         tr.innerHTML = renderLinhaProdutoView(p);
         tbody.appendChild(tr);
       });
@@ -181,12 +179,10 @@
     function renderLinhaProdutoView(p){
       const img = p.imagem || "https://via.placeholder.com/300x300?text=Produto";
       return `
-        <td title="${p.nome}">${p.nome}</td>
+        <td title="${escapeHtml(p.nome)}">${escapeHtml(p.nome)}</td>
         <td>R$ ${moeda(p.preco)}</td>
-        <td>${p.estoque}</td>
-        <td style="word-break:break-all">
-          <div class="helper">${img}</div>
-        </td>
+        <td>${Number(p.estoque)}</td>
+        <td><div class="helper">${escapeHtml(img)}</div></td>
         <td>
           <div class="acao-grid">
             <button class="btn-editar" onclick="editarProduto(${p.id})">Editar</button>
@@ -197,11 +193,10 @@
     }
 
     function renderLinhaProdutoEdit(p){
-      // Preenche com os valores atuais
       const valores = estadoEdicao.get(p.id) || { nome:p.nome, preco:p.preco, estoque:p.estoque, imagem:p.imagem || "" };
       return `
         <td>
-          <input type="text" id="edit-nome-${p.id}" value="${escapeHtml(valores.nome)}" placeholder="Nome" />
+          <input type="text" id="edit-nome-${p.id}" value="${escapeAttr(valores.nome)}" placeholder="Nome" />
         </td>
         <td>
           <input type="number" id="edit-preco-${p.id}" value="${Number(valores.preco)}" step="0.01" min="0" placeholder="Preço" />
@@ -210,12 +205,12 @@
           <input type="number" id="edit-estoque-${p.id}" value="${parseInt(valores.estoque||0)}" min="0" placeholder="Estoque" />
         </td>
         <td>
-          <input type="url" id="edit-imagem-${p.id}" value="${escapeHtml(valores.imagem || "")}" placeholder="URL da imagem" />
+          <input type="url" id="edit-imagem-${p.id}" value="${escapeAttr(valores.imagem || "")}" placeholder="URL da imagem" />
           <div class="helper">Dica: deixe vazio para manter a atual.</div>
         </td>
         <td>
           <div class="acao-grid">
-            <button class="btn-salvar" onclick="salvarProduto(${p.id})">Salvar</button>
+            <button class="btn-salvar" onclick="salvarProduto()">Salvar</button>
             <button class="btn-cancelar" onclick="cancelarEdicao(${p.id})">Cancelar</button>
           </div>
         </td>
@@ -227,7 +222,7 @@
       if (!tr) return;
       if (tr.classList.contains("editing")) return;
 
-      // Captura os dados atuais para possível cancelamento
+      // captura dados atuais da linha (view)
       const tds = tr.querySelectorAll("td");
       const atual = {
         nome: tds[0].innerText.trim(),
@@ -237,20 +232,17 @@
       };
       estadoEdicao.set(id, { ...atual, original: atual });
 
-      // Troca para modo edição
       tr.classList.add("editing");
       tr.innerHTML = renderLinhaProdutoEdit({ id, ...atual });
 
-      // Atalhos Enter/Escape
+      // atalhos
       const inputs = tr.querySelectorAll("input");
       inputs.forEach(inp=>{
         inp.addEventListener("keydown", (e)=>{
-          if (e.key === "Enter") salvarProduto(id);
+          if (e.key === "Enter") salvarProduto();
           if (e.key === "Escape") cancelarEdicao(id);
         });
       });
-
-      // Foco no primeiro campo
       tr.querySelector(`#edit-nome-${id}`)?.focus();
     }
 
@@ -266,46 +258,61 @@
       estadoEdicao.delete(id);
     }
 
-    async function salvarProduto(id){
-      const tr = document.querySelector(`tr[data-id="${id}"]`);
+    // Atualiza SEMPRE usando o id do DOM (data-id da linha em edição)
+    async function salvarProduto(){
+      const tr = document.querySelector("tr.editing");
       if (!tr) return;
+      const id = Number(tr.dataset.id);
+      if (!id) { alert("ID do produto não encontrado."); return; }
 
-      // Coleta valores dos inputs
-      const nome = (document.getElementById(`edit-nome-${id}`)?.value || "").trim();
-      const preco = parseFloat(document.getElementById(`edit-preco-${id}`)?.value || "0");
+      const nome    = (document.getElementById(`edit-nome-${id}`)?.value || "").trim();
+      const preco   = parseFloat(document.getElementById(`edit-preco-${id}`)?.value || "0");
       const estoque = parseInt(document.getElementById(`edit-estoque-${id}`)?.value || "0");
-      const imagem = (document.getElementById(`edit-imagem-${id}`)?.value || "").trim();
+      const imagem  = (document.getElementById(`edit-imagem-${id}`)?.value || "").trim();
 
-      // Validações básicas
       if (!nome) return alert("Informe o nome.");
       if (Number.isNaN(preco) || preco < 0) return alert("Preço inválido.");
       if (!Number.isInteger(estoque) || estoque < 0) return alert("Estoque inválido.");
 
       const payload = { nome, preco, estoque };
-      if (imagem) payload.imagem = imagem; // só envia imagem se informado
+      if (imagem) payload.imagem = imagem;
 
       try{
-        const res = await fetch(`${API.produtos}/${id}`, {
-          method:"PUT",
+        // PATCH (padrão Rails) + fallback PUT
+        let res = await fetch(`${API.produtos}/${id}`, {
+          method:"PATCH",
           headers:{ "Content-Type":"application/json" },
           body: JSON.stringify(payload)
         });
-        if (!res.ok) throw new Error("Falha ao atualizar produto");
-        // recarrega a lista para refletir todas as colunas corretamente
+        if (!res.ok) {
+          // fallback para PUT se o host só aceitar PUT
+          res = await fetch(`${API.produtos}/${id}`, {
+            method:"PUT",
+            headers:{ "Content-Type":"application/json" },
+            body: JSON.stringify(payload)
+          });
+        }
+        if (!res.ok) {
+          const txt = await res.text().catch(()=> "");
+          throw new Error(`Falha ao atualizar produto (HTTP ${res.status}) ${txt}`);
+        }
         await carregarProdutos();
       }catch(e){
         console.error(e);
-        alert("Erro ao salvar. Tente novamente.");
+        alert("Erro ao salvar. Veja o console para detalhes.");
       }finally{
         estadoEdicao.delete(id);
       }
     }
 
-    // Utilitário simples para escapar HTML ao montar inputs
+    // Utilitários para escapar HTML
     function escapeHtml(str){
       return String(str).replace(/[&<>"']/g, s => ({
         "&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;","'":"&#39;"
       }[s]));
+    }
+    function escapeAttr(str){
+      return escapeHtml(str).replace(/"/g, "&quot;");
     }
 
     async function removerProduto(id){
@@ -315,6 +322,7 @@
       }
     }
 
+    // Criação de produto
     document.getElementById("formProdutos").addEventListener("submit", async e=>{
       e.preventDefault();
       const novo = {
@@ -333,7 +341,6 @@
     });
 
     // ---------------- Pedidos ----------------
-    // Auto-soma do total no rodapé
     function atualizarAutoSoma(pedidos){
       const total = (Array.isArray(pedidos) ? pedidos : [])
         .reduce((s, p) => s + Number(p.total || 0), 0);
@@ -362,7 +369,7 @@
           <td>${p.id}</td>
           <td>${p.cliente?.nome||"-"}</td>
           <td>${p.cliente?.endereco||"-"}</td>
-          <td>${itens}</td>
+          <td>${escapeHtml(itens)}</td>
           <td>R$ ${moeda(p.total)}</td>
           <td>${p.pix?"PIX":"Outro"}</td>
           <td>
@@ -377,7 +384,6 @@
         tbody.appendChild(tr);
       });
 
-      // Atualiza a soma do rodapé
       atualizarAutoSoma(pedidos);
     }
 
@@ -396,13 +402,14 @@
       }
     }
 
+    // ---------------- Bootstrap ----------------
     document.addEventListener("DOMContentLoaded", ()=>{
       registrarServiceWorker().then(inscreverPush);
       carregarProdutos();
       carregarPedidos();
       setInterval(carregarPedidos, 5000);
 
-      // Atalho: duplo clique numa linha de produto -> editar
+      // Duplo clique numa linha de produto -> editar
       document.getElementById("listaProdutos").addEventListener("dblclick", (e)=>{
         const tr = e.target.closest("tr[data-id]");
         if (tr) editarProduto(Number(tr.dataset.id));
