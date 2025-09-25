@@ -56,8 +56,8 @@ app.get("/health", (_req, res) => res.json({ ok: true }));
 
 /* -------------------------------- Config PIX -------------------------------- */
 const chavePix = "55160826000100";   // CNPJ SEM máscara
-const nomeLoja = "RS LUBRIFICANTES"; // máx 25
-const cidade   = "SAMBAIBA";         // máx 15
+const nomeLoja = "RS LUBRIFICANTES";
+const cidade   = "SAMBAIBA";
 
 /* ----------------------------- Push Web (opcional) --------------------------- */
 const VAPID_PUBLIC  = process.env.VAPID_PUBLIC_KEY  || "";
@@ -134,19 +134,16 @@ app.get("/debug/telegram/getChat", async (_req, res) => {
 /* ------------------------------- Banco (Postgres) ---------------------------- */
 const { Pool } = require("pg");
 
-// >>> Opção A: sempre força sslmode=no-verify na URL <<<
+// Força sslmode=no-verify na URL (evita self-signed)
 function normalizeDbUrl(u) {
   if (!u) return u;
-  // remove qualquer sslmode prévio
   u = u.replace(/([?&])sslmode=[^&]*/i, "$1").replace(/[?&]$/, "");
-  // adiciona no-verify
   u += (u.includes("?") ? "&" : "?") + "sslmode=no-verify";
   return u;
 }
 
 const pool = new Pool({
   connectionString: normalizeDbUrl(process.env.DATABASE_URL),
-  // Mantém rejectUnauthorized:false para evitar "self-signed certificate in certificate chain"
   ssl: { rejectUnauthorized: false },
   connectionTimeoutMillis: 5000,
   idleTimeoutMillis: 30000,
@@ -195,7 +192,6 @@ const Produtos = {
       );
       return rows.map(r => ({ ...r, preco: Number(r.preco), estoque: Number(r.estoque) }));
     } catch (e) {
-      // cria tabela e tenta de novo se não existir
       if (/relation .*products.* does not exist/i.test(e?.message || "")) {
         await ensureSchema();
         const { rows } = await pool.query(
@@ -433,8 +429,8 @@ async function sendPushToAll(title, body, data = {}) {
 }
 
 /* -------------------------------- Pedidos ----------------------------------- */
-// admin
-app.get("/api/pedidos", ...adminOnly, async (_req, res) => {
+// ⚠️ LISTAR = PÚBLICO (somente leitura) para o painel conseguir buscar via fetch
+app.get("/api/pedidos", async (_req, res) => {
   try {
     res.json(await Pedidos.listar());
   } catch (e) {
@@ -442,6 +438,8 @@ app.get("/api/pedidos", ...adminOnly, async (_req, res) => {
     res.status(500).json({ error: "Falha ao listar pedidos", detail: e?.message || String(e) });
   }
 });
+
+// os demais continuam protegidos
 app.get("/api/pedidos/:id", ...adminOnly, async (req, res) => {
   try {
     const p = await Pedidos.obter(String(req.params.id));
