@@ -69,8 +69,11 @@ app.get(["/delivery", "/delivery.html"], (_req, res) => {
 app.get("/health", (_req, res) => res.json({ ok: true }));
 
 /* ------------------------------- Banco em arquivo ---------------------------- */
-// Use DB_FILE=/data/db.json no Railway (com Volume montado em /data)
-const DB_FILE = process.env.DB_FILE || path.join(__dirname, "db.json");
+// ✅ ALTERAÇÃO 1: base do diretório persistente (volume)
+const DATA_DIR = process.env.DATA_DIR || "/data";
+
+// ✅ ALTERAÇÃO 2: caminho do arquivo do DB usando o volume
+const DB_FILE = process.env.DB_FILE || path.join(DATA_DIR, "db.json");
 
 // Garante que a pasta do banco existe
 const dbDir = path.dirname(DB_FILE);
