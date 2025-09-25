@@ -4,6 +4,15 @@
   <meta charset="UTF-8" />
   <title>RS Lubrificantes - Posto RS</title>
   <meta name="viewport" content="width=device-width, initial-scale=1" />
+
+  <!-- PWA -->
+  <link rel="manifest" href="/manifest.json">
+  <meta name="theme-color" content="#0f172a">
+  <!-- iOS (Safari) -->
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <link rel="apple-touch-icon" href="/icons/icon-192.png">
+
   <style>
     body{font-family:Arial,sans-serif;margin:0;background:#f4f4f4;color:#333}
     header{background:#111;color:#fff;padding:15px;text-align:center}
@@ -25,7 +34,21 @@
     input,select{width:100%;padding:10px;margin:5px 0;border:1px solid #ccc;border-radius:5px}
     .muted{color:#666;font-size:13px;margin-top:6px}
     .expired{color:#c0392b;font-weight:bold}
+
+    /* Botão "Instalar app" (PWA) */
+    #btnInstall{
+      position:fixed;left:50%;transform:translateX(-50%);
+      bottom:14px;z-index:9999;display:none;
+      background:#0f172a;color:#fff;border:none;border-radius:999px;
+      padding:10px 18px;box-shadow:0 4px 14px rgba(0,0,0,.15);cursor:pointer
+    }
+    #iosHint{
+      display:none;position:fixed;left:10px;right:10px;bottom:14px;z-index:9998;
+      background:#fff;border:1px solid #eee;border-radius:10px;padding:10px 12px;
+      box-shadow:0 4px 14px rgba(0,0,0,.12);font-size:14px;color:#333
+    }
   </style>
+
   <!-- QR Code no navegador -->
   <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js" defer></script>
 </head>
@@ -80,6 +103,10 @@
       <p class="muted">Se o QR expirar, finalize o pedido novamente para gerar um novo.</p>
     </section>
   </main>
+
+  <!-- Botão "Instalar app" PWA -->
+  <button id="btnInstall">Instalar app</button>
+  <div id="iosHint">Para instalar no iPhone: toque em <b>Compartilhar</b> → <b>Adicionar à Tela de Início</b>.</div>
 
   <script>
     // ======= CONFIG FIXA =======
@@ -206,7 +233,6 @@
     }
 
     function startQrTimer(minutes){
-      // limpa timer anterior
       if (_qrTimerId){ clearInterval(_qrTimerId); _qrTimerId = null; }
       const msTotal = minutes * 60 * 1000;
       _qrExpireAt = Date.now() + msTotal;
@@ -282,18 +308,14 @@
             descricao
           });
 
-          // Guarda payload para o botão "copiar"
           _lastPixPayload = payload;
 
-          // QR Code
           const qrEl = document.getElementById("pixQr");
           qrEl.innerHTML = "";
           new QRCode(qrEl, { text: payload, width: 220, height: 220 });
 
-          // Exibe payload (opcional)
           document.getElementById("pixPayload").textContent = payload;
 
-          // Inicia/renova o timer de expiração
           startQrTimer(QR_EXPIRY_MINUTES);
         } else {
           document.getElementById("pagamento").style.display="none";
@@ -310,9 +332,8 @@
       }
     }
 
-    // Copia apenas dígitos da chave CNPJ
     function copiarChave(){
-      if (Date.now() > _qrExpireAt) return; // bloqueia se expirado
+      if (Date.now() > _qrExpireAt) return;
       const raw = document.getElementById("pixChave").textContent.replace(/\D/g,"");
       navigator.clipboard.writeText(raw).then(()=>{
         const msg = document.getElementById("msgCopiado");
@@ -321,7 +342,6 @@
       });
     }
 
-    // Copia o payload EMV (copia e cola)
     function copiarPayload(){
       if (Date.now() > _qrExpireAt) return;
       if(!_lastPixPayload){
@@ -339,7 +359,6 @@
       });
     }
 
-    // Copia o valor do pedido no formato brasileiro (R$ 0,00)
     function copiarValor(){
       if (Date.now() > _qrExpireAt) return;
       const texto = "R$ " + moeda(_lastTotal);
@@ -349,6 +368,47 @@
         setTimeout(()=>msg.style.display="none", 3000);
       });
     }
+
+    // ====== PWA: registrar Service Worker + botão "Instalar" ======
+    (function setupPWA(){
+      // Registrar SW
+      if ("serviceWorker" in navigator) {
+        window.addEventListener("load", () => {
+          navigator.serviceWorker.register("/service-worker.js");
+        });
+      }
+
+      // Botão "Instalar"
+      let deferredPrompt = null;
+      const btn = document.getElementById("btnInstall");
+      window.addEventListener("beforeinstallprompt", (e) => {
+        e.preventDefault();
+        deferredPrompt = e;
+        if (btn) btn.style.display = "inline-block";
+      });
+      if (btn) {
+        btn.addEventListener("click", async () => {
+          if (!deferredPrompt) return;
+          deferredPrompt.prompt();
+          await deferredPrompt.userChoice;
+          deferredPrompt = null;
+          btn.style.display = "none";
+        });
+      }
+      window.addEventListener("appinstalled", () => {
+        if (btn) btn.style.display = "none";
+      });
+
+      // Dica para iOS
+      const isIOS = /iphone|ipad|ipod/i.test(navigator.userAgent);
+      const isStandalone = window.matchMedia("(display-mode: standalone)").matches || window.navigator.standalone;
+      if (isIOS && !isStandalone) {
+        const hint = document.getElementById("iosHint");
+        if (hint) hint.style.display = "block";
+        // Esconde depois de um tempo
+        setTimeout(()=>{ if(hint) hint.style.display="none"; }, 8000);
+      }
+    })();
 
     document.addEventListener("DOMContentLoaded", ()=>{
       carregarProdutos();
