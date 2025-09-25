@@ -40,9 +40,7 @@ app.use(
 
 /* ------------------------------ Arquivos estáticos --------------------------- */
 app.use(
-  express.static(path.join(__dirname, "public"), {
-    index: false, // impede servir index.html automaticamente
-  })
+  express.static(path.join(__dirname, "public"), { index: false })
 );
 
 /* -------------------------- Rotas de páginas (UI) ---------------------------- */
@@ -55,7 +53,7 @@ app.get(["/delivery", "/delivery.html"], (_req, res) => {
 app.get("/health", (_req, res) => res.json({ ok: true }));
 
 /* -------------------------------- Config PIX -------------------------------- */
-const chavePix = "55160826000100";   // CNPJ SEM máscara
+const chavePix = "55160826000100";   // CNPJ sem máscara
 const nomeLoja = "RS LUBRIFICANTES"; // máx 25
 const cidade   = "SAMBAIBA";         // máx 15
 
@@ -66,7 +64,7 @@ const VAPID_SUBJECT = process.env.VAPID_SUBJECT     || "mailto:suporte@exemplo.c
 if (webpush && VAPID_PUBLIC && VAPID_PRIVATE) {
   webpush.setVapidDetails(VAPID_SUBJECT, VAPID_PUBLIC, VAPID_PRIVATE);
 } else if (!VAPID_PUBLIC || !VAPID_PRIVATE) {
-  console.warn("[web-push] sem VAPID_PUBLIC_KEY/VAPID_PRIVATE_KEY — recurso de push web ficará inativo.");
+  console.warn("[web-push] sem VAPID_PUBLIC_KEY/VAPID_PRIVATE_KEY — recurso de push web inativo.");
 }
 
 /* ----------------------- Telegram (com logs e debug) ------------------------- */
@@ -95,38 +93,32 @@ async function sendTelegramMessage(text) {
     });
     const body = await r.text();
     if (!r.ok) console.warn("[telegram] falhou:", r.status, body);
-    else console.log("[telegram] ok:", body);
   } catch (e) {
     console.warn("[telegram] erro:", e?.message || e);
   }
 }
 
-// Endpoints de debug do Telegram
+// Debug Telegram
 app.get("/debug/telegram", async (req, res) => {
   try {
     const text = String(req.query.text || "Teste do servidor ✅");
-    if (!TG_TOKEN || !TG_CHAT) {
-      return res.status(400).json({ ok: false, error: "Faltam TELEGRAM_BOT_TOKEN ou TELEGRAM_CHAT_ID" });
-    }
+    if (!TG_TOKEN || !TG_CHAT) return res.status(400).json({ ok:false, error:"Faltam TELEGRAM_BOT_TOKEN/TELEGRAM_CHAT_ID" });
     const r = await _fetch(`https://api.telegram.org/bot${TG_TOKEN}/sendMessage`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ chat_id: TG_CHAT, text, parse_mode: "HTML", disable_web_page_preview: true }),
+      method: "POST", headers:{ "Content-Type":"application/json" },
+      body: JSON.stringify({ chat_id: TG_CHAT, text, parse_mode:"HTML", disable_web_page_preview:true }),
     });
     const bodyText = await r.text();
-    try { return res.status(r.status).json(JSON.parse(bodyText)); }
-    catch { return res.status(r.status).type("text/plain").send(bodyText); }
-  } catch (e) {
-    return res.status(500).json({ ok: false, error: String(e?.message || e) });
-  }
+    try { res.status(r.status).json(JSON.parse(bodyText)); }
+    catch { res.status(r.status).type("text/plain").send(bodyText); }
+  } catch (e) { res.status(500).json({ ok:false, error:String(e?.message||e) }); }
 });
 app.get("/debug/telegram/getMe", async (_req, res) => {
-  if (!TG_TOKEN) return res.status(400).json({ error: "Sem TELEGRAM_BOT_TOKEN" });
+  if (!TG_TOKEN) return res.status(400).json({ error:"Sem TELEGRAM_BOT_TOKEN" });
   const r = await _fetch(`https://api.telegram.org/bot${TG_TOKEN}/getMe`);
   res.status(r.status).json(await r.json());
 });
 app.get("/debug/telegram/getChat", async (_req, res) => {
-  if (!TG_TOKEN || !TG_CHAT) return res.status(400).json({ error: "Sem TOKEN/CHAT_ID" });
+  if (!TG_TOKEN || !TG_CHAT) return res.status(400).json({ error:"Sem TOKEN/CHAT_ID" });
   const r = await _fetch(`https://api.telegram.org/bot${TG_TOKEN}/getChat?chat_id=${encodeURIComponent(TG_CHAT)}`);
   res.status(r.status).json(await r.json());
 });
@@ -134,7 +126,7 @@ app.get("/debug/telegram/getChat", async (_req, res) => {
 /* ------------------------------- Banco (Postgres) ---------------------------- */
 const { Pool } = require("pg");
 
-// ⚠️ NÃO altere a URL (não acrescente sslmode). Forçamos SSL aqui:
+// SSL robusto para Railway/Cloud (evita self-signed chain)
 const pool = new Pool({
   connectionString: process.env.DATABASE_URL,
   ssl: { require: true, rejectUnauthorized: false },
@@ -170,10 +162,10 @@ async function ensureSchema() {
 }
 ensureSchema().catch(e => console.error("ensureSchema:", e));
 
-// Debug DB helpers
+/* --------- Helpers de Debug do DB ---------- */
 app.get("/debug/db-ensure", async (_req, res) => {
   try { await ensureSchema(); res.json({ ok: true }); }
-  catch (e) { res.status(500).json({ ok: false, error: e.message }); }
+  catch (e) { res.status(500).json({ ok:false, error:e.message }); }
 });
 app.get("/debug/db-tables", async (_req, res) => {
   try {
@@ -197,30 +189,63 @@ function newId() {
   try { return require("crypto").randomUUID(); } catch { return String(Date.now()); }
 }
 
-/* --------------------- Normalizadores de JSON (⚠️ importante) ---------------- */
-function parseJSONSafely(v) {
-  if (typeof v !== "string") return v;
-  const s = v.trim();
-  if (!s) return v;
+/* --------- Normalizadores (tolerantes a strings malformadas) --------- */
+function tryJSON(s) {
+  try { return JSON.parse(s); } catch { return null; }
+}
+function cleanMaybeWrappedJSON(str) {
+  if (typeof str !== "string") return str;
+  let s = str.trim();
+
+  // Se veio como string JSON entre aspas, decodifica uma vez
+  if (s.startsWith("\"") && s.endsWith("\"")) {
+    const inner = tryJSON(s);
+    if (typeof inner === "string") s = inner.trim();
+  }
+
+  // Remove aspas sobrando no final (caso típico ..."}")
+  if ((s.startsWith("{") || s.startsWith("[")) && s.endsWith("\"")) {
+    const fixed = tryJSON(s.slice(0, -1));
+    if (fixed !== null) return fixed;
+  }
+
+  // Tenta parse normal
   if ((s.startsWith("{") && s.endsWith("}")) || (s.startsWith("[") && s.endsWith("]"))) {
-    try { return JSON.parse(s); } catch { return v; }
+    const parsed = tryJSON(s);
+    if (parsed !== null) return parsed;
+  }
+  return str; // devolve original (pode ser objeto já correto)
+}
+
+function parseJSONSafely(v) {
+  if (typeof v === "string") {
+    const cleaned = cleanMaybeWrappedJSON(v);
+    if (typeof cleaned !== "string") return cleaned;
+    const parsed = tryJSON(cleaned);
+    return parsed !== null ? parsed : v;
   }
   return v;
 }
+
 function normalizePedidoInput(pedido) {
   const out = { ...pedido };
+
+  // cliente pode vir como string JSON
   out.cliente = parseJSONSafely(out.cliente);
   if (!out.cliente || typeof out.cliente !== "object") out.cliente = {};
 
+  // itens pode vir como objeto único ou string (até duplo encodado)
   let itens = parseJSONSafely(out.itens);
-  if (!Array.isArray(itens)) itens = [];
-  itens = itens.map(it => {
-    const obj = parseJSONSafely(it);
-    return (obj && typeof obj === "object") ? obj : null;
-  }).filter(Boolean);
+  if (!Array.isArray(itens)) itens = [itens];
+  itens = itens
+    .map((it) => parseJSONSafely(it))
+    .map((it) => (it && typeof it === "object" ? it : null))
+    .filter(Boolean);
   out.itens = itens;
 
   out.total = Number(String(out.total ?? "0").replace(",", ".")) || 0;
+  out.status = out.status || "Pendente";
+
   return out;
 }
 
@@ -310,7 +335,7 @@ const Pedidos = {
       const id = newId();
       const q = `INSERT INTO pedidos (id, cliente, itens, total, status, pix)
                  VALUES ($1,$2,$3,$4,$5,$6) RETURNING *`;
-      const vals = [id, pedido.cliente, pedido.itens, pedido.total, pedido.status || "Pendente", pedido.pix || null];
+      const vals = [id, pedido.cliente, pedido.itens, pedido.total, pedido.status, pedido.pix || null];
       const { rows } = await client.query(q, vals);
       await Produtos.baixarEstoqueItens(pedido.itens, client);
       await client.query("COMMIT");
@@ -364,21 +389,15 @@ app.get("/api/pix/:valor/:txid?", async (req, res) => {
       return res.status(400).json({ error: "Valor inválido (mínimo 0,01)" });
     }
     const txid = (req.params.txid || "PIX" + Date.now()).slice(0, 25);
-
     const qrCodePix = QrCodePix({
-      version: "01",
-      key: chavePix,
-      name: nomeLoja,
-      city: cidade,
-      transactionId: txid,
-      value: Number(valor.toFixed(2)),
+      version: "01", key: chavePix, name: nomeLoja, city: cidade, transactionId: txid, value: Number(valor.toFixed(2)),
     });
-
-    const payload = qrCodePix.payload().replace(/\s+/g, "");
-    const qrCodeImage = await qrCodePix.base64();
-
     res.set("Cache-Control", "no-store");
-    res.json({ payload, qrCodeImage, txid, chave: chavePix });
+    res.json({
+      payload: qrCodePix.payload().replace(/\s+/g, ""),
+      qrCodeImage: await qrCodePix.base64(),
+      txid, chave: chavePix
+    });
   } catch (err) {
     console.error("Erro ao gerar PIX:", err);
     res.status(500).json({ error: "Falha ao gerar QR Code PIX" });
@@ -386,15 +405,10 @@ app.get("/api/pix/:valor/:txid?", async (req, res) => {
 });
 
 /* ------------------------------- Produtos ----------------------------------- */
-// público
 app.get("/api/produtos", async (_req, res) => {
   try { res.json(await Produtos.listar()); }
-  catch (e) {
-    console.error("/api/produtos:", e?.message);
-    res.status(500).json({ error: "Falha ao listar produtos", detail: e?.message });
-  }
+  catch (e) { console.error("/api/produtos:", e?.message); res.status(500).json({ error: "Falha ao listar produtos", detail: e?.message }); }
 });
-// admin
 app.post("/api/produtos", ...adminOnly, async (req, res) => {
   try { res.json(await Produtos.criar(req.body || {})); }
   catch (e) { res.status(400).json({ error: e.message || "Falha ao criar produto" }); }
@@ -450,25 +464,21 @@ app.post("/api/push/unsubscribe", async (req, res) => {
     res.json({ ok: true });
   } catch { res.status(500).json({ error: "falha ao remover assinatura" }); }
 });
-
 async function sendPushToAll(title, body, data = {}) {
   if (!webpush || !VAPID_PUBLIC || !VAPID_PRIVATE) return;
   const subs = await PushSubs.listar();
   if (!subs.length) return;
   const payload = JSON.stringify({ title, body, data });
-  await Promise.all(
-    subs.map(async (sub) => {
-      try { await webpush.sendNotification(sub, payload); }
-      catch (err) {
-        console.warn("[push] assinatura inválida:", err?.statusCode);
-        try { if (sub?.endpoint) await PushSubs.remover(sub.endpoint); } catch {}
-      }
-    })
-  );
+  await Promise.all(subs.map(async (sub) => {
+    try { await webpush.sendNotification(sub, payload); }
+    catch (err) {
+      console.warn("[push] assinatura inválida:", err?.statusCode);
+      try { if (sub?.endpoint) await PushSubs.remover(sub.endpoint); } catch {}
+    }
+  }));
 }
 
 /* -------------------------------- Pedidos ----------------------------------- */
-// admin
 app.get("/api/pedidos", ...adminOnly, async (_req, res) => {
   try { res.json(await Pedidos.listar()); }
   catch (e) {
@@ -504,21 +514,20 @@ app.post("/api/pedidos", async (req, res) => {
   try {
     const pedido = normalizePedidoInput({ ...req.body, status: "Pendente" });
 
-    // Gera PIX (tentativa)
+    // PIX (opcional)
     try {
       if (pedido.total >= 0.01) {
         const txid = ("PED" + Date.now()).slice(0, 25);
         const qrCodePix = QrCodePix({
-          version: "01", key: chavePix, name: nomeLoja, city: cidade, transactionId: txid, value: Number(pedido.total.toFixed(2)),
+          version:"01", key:chavePix, name:nomeLoja, city:cidade,
+          transactionId:txid, value:Number(pedido.total.toFixed(2)),
         });
         pedido.pix = {
           payload: qrCodePix.payload().replace(/\s+/g, ""),
           qrCodeImage: await qrCodePix.base64(),
           txid, chave: chavePix,
         };
-      } else {
-        pedido.pix = null;
-      }
+      } else pedido.pix = null;
     } catch (err) {
       console.error("Erro ao gerar PIX do pedido:", err?.message);
       pedido.pix = null;
@@ -546,7 +555,7 @@ app.post("/api/pedidos", async (req, res) => {
 
     res.json(saved);
   } catch (e) {
-    console.error("POST /api/pedidos error:", e);
+    console.error("POST /api/pedidos error:", e?.message || e);
     res.status(500).json({ error: "Falha ao criar pedido", detail: e?.message });
   }
 });
