@@ -134,14 +134,10 @@ app.get("/debug/telegram/getChat", async (_req, res) => {
 /* ------------------------------- Banco (Postgres) ---------------------------- */
 const { Pool } = require("pg");
 
-function normalizeDbUrl(u) {
-  if (!u) return u;
-  if (!/\?.*sslmode=/.test(u)) u += (u.includes("?") ? "&" : "?") + "sslmode=require";
-  return u;
-}
+// ⚠️ Sem SSL: use host interno + ?sslmode=disable na DATABASE_URL (Railway Postgres interno)
 const pool = new Pool({
-  connectionString: normalizeDbUrl(process.env.DATABASE_URL),
-  ssl: { rejectUnauthorized: false },
+  connectionString: process.env.DATABASE_URL, // ex: postgresql://user:pass@postgres.railway.internal:5432/railway?sslmode=disable
+  ssl: false,
   connectionTimeoutMillis: 5000,
   idleTimeoutMillis: 30000,
   max: 10,
@@ -255,7 +251,6 @@ const Pedidos = {
       const vals = [id, clienteJson, itensJson, total, pedido.status || "Pendente", pixJson];
       const { rows } = await client.query(q, vals);
 
-      // baixa estoque usando os itens do pedido
       await Produtos.baixarEstoqueItens(Array.isArray(pedido.itens) ? pedido.itens : [], client);
 
       await client.query("COMMIT");
