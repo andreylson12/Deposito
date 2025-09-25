@@ -1,54 +1,44 @@
-// public/service-worker.js
+const CACHE = "rs-delivery-v3"; // mude a versão quando fizer deploy novo
+
 self.addEventListener("install", (e) => {
+  e.waitUntil(
+    caches.open(CACHE).then(c => c.addAll([
+      "/",
+      "/delivery",
+      "/delivery.html",
+      "/style.css",
+      "/script.js",
+      "/manifest.json",
+      "/icons/icon-192.png",
+      "/icons/icon-512.png"
+      // ⚠️ não coloque rotas /api aqui
+    ]))
+  );
   self.skipWaiting();
 });
+
 self.addEventListener("activate", (e) => {
-  e.waitUntil(self.clients.claim());
-});
-
-// Exibe notificações quando chegar push do servidor
-self.addEventListener("push", (event) => {
-  if (!event.data) return;
-  let payload = {};
-  try { payload = event.data.json(); } catch { payload = { title: "Novo pedido", body: event.data.text() }; }
-  const { title = "Novo pedido", body = "", data = {} } = payload;
-
-  event.waitUntil(
-    self.registration.showNotification(title, {
-      body,
-      data,
-      icon: "/icons/icon-192.png",
-      badge: "/icons/icon-192.png",
-      vibrate: [80, 50, 80]
-    })
+  e.waitUntil(
+    caches.keys().then(keys =>
+      Promise.all(keys.filter(k => k !== CACHE).map(k => caches.delete(k)))
+    )
   );
+  self.clients.claim();
 });
 
-self.addEventListener("notificationclick", (event) => {
-  event.notification.close();
-  const url = "/index.html";
-  event.waitUntil(
-    self.clients.matchAll({ type: "window", includeUncontrolled: true }).then((clientsArr) => {
-      for (const c of clientsArr) {
-        if ("focus" in c) return c.focus();
-      }
-      if (self.clients.openWindow) return self.clients.openWindow(url);
-    })
-  );
-});
-
-// (Opcional) cache simples
-const CACHE = "adega-v1";
 self.addEventListener("fetch", (event) => {
-  if (event.request.method !== "GET") return;
+  const url = new URL(event.request.url);
+
+  // API = network-first (nada de cache pra não "sumir" produto)
+  if (url.pathname.startsWith("/api/")) {
+    event.respondWith(
+      fetch(event.request).catch(() => caches.match(event.request))
+    );
+    return;
+  }
+
+  // Arquivos estáticos = cache-first
   event.respondWith(
-    caches.open(CACHE).then(async (cache) => {
-      const cached = await cache.match(event.request);
-      const fetched = fetch(event.request).then((resp) => {
-        try { cache.put(event.request, resp.clone()); } catch {}
-        return resp;
-      }).catch(() => cached);
-      return cached || fetched;
-    })
+    caches.match(event.request).then(resp => resp || fetch(event.request))
   );
 });
