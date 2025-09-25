@@ -56,8 +56,8 @@ app.get("/health", (_req, res) => res.json({ ok: true }));
 
 /* -------------------------------- Config PIX -------------------------------- */
 const chavePix = "55160826000100";   // CNPJ SEM máscara
-const nomeLoja = "RS LUBRIFICANTES";
-const cidade   = "SAMBAIBA";
+const nomeLoja = "RS LUBRIFICANTES"; // máx 25
+const cidade   = "SAMBAIBA";         // máx 15
 
 /* ----------------------------- Push Web (opcional) --------------------------- */
 const VAPID_PUBLIC  = process.env.VAPID_PUBLIC_KEY  || "";
@@ -134,14 +134,11 @@ app.get("/debug/telegram/getChat", async (_req, res) => {
 /* ------------------------------- Banco (Postgres) ---------------------------- */
 const { Pool } = require("pg");
 
-// Força sslmode=no-verify na URL (evita self-signed)
 function normalizeDbUrl(u) {
   if (!u) return u;
-  u = u.replace(/([?&])sslmode=[^&]*/i, "$1").replace(/[?&]$/, "");
-  u += (u.includes("?") ? "&" : "?") + "sslmode=no-verify";
+  if (!/\?.*sslmode=/.test(u)) u += (u.includes("?") ? "&" : "?") + "sslmode=require";
   return u;
 }
-
 const pool = new Pool({
   connectionString: normalizeDbUrl(process.env.DATABASE_URL),
   ssl: { rejectUnauthorized: false },
@@ -177,28 +174,79 @@ async function ensureSchema() {
 }
 ensureSchema().catch(e => console.error("ensureSchema:", e));
 
+// Debug DB helpers
+app.get("/debug/db-ensure", async (_req, res) => {
+  try { await ensureSchema(); res.json({ ok: true }); }
+  catch (e) { res.status(500).json({ ok: false, error: e.message }); }
+});
+app.get("/debug/db-tables", async (_req, res) => {
+  try {
+    const { rows } = await pool.query(`SELECT table_name FROM information_schema.tables WHERE table_schema='public' ORDER BY 1`);
+    res.json(rows.map(r => r.table_name));
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+app.get("/debug/db-counts", async (_req, res) => {
+  try {
+    const q = (t) => pool.query(`SELECT COUNT(*)::int AS c FROM ${t}`).then(r => r.rows[0].c).catch(()=>null);
+    const [a,b,c] = await Promise.all([q("products"), q("pedidos"), q("push_subs")]);
+    res.json({ products:a, pedidos:b, push_subs:c });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+app.get("/debug/db-ping", async (_req, res) => {
+  try { await pool.query("SELECT 1"); res.json({ ok:true }); }
+  catch (e) { res.status(500).json({ ok:false, error:e.message }); }
+});
+
 function newId() {
   try { return require("crypto").randomUUID(); } catch { return String(Date.now()); }
+}
+
+/* --------------------- Normalizadores de JSON (⚠️ importante) ---------------- */
+function parseJSONSafely(v) {
+  if (typeof v !== "string") return v;
+  const s = v.trim();
+  if (!s) return v;
+  // aceita strings começando com { ou [ e tenta parse
+  if ((s.startsWith("{") && s.endsWith("}")) || (s.startsWith("[") && s.endsWith("]"))) {
+    try { return JSON.parse(s); } catch { return v; }
+  }
+  return v;
+}
+function normalizePedidoInput(pedido) {
+  const out = { ...pedido };
+
+  // cliente pode vir como string JSON
+  out.cliente = parseJSONSafely(out.cliente);
+  if (!out.cliente || typeof out.cliente !== "object") out.cliente = {};
+
+  // itens pode vir: array de objetos OU array de strings JSON
+  let itens = parseJSONSafely(out.itens);
+  if (!Array.isArray(itens)) itens = [];
+
+  itens = itens.map(it => {
+    const obj = parseJSONSafely(it);
+    if (obj && typeof obj === "object") return obj;
+    return null;
+  }).filter(Boolean);
+
+  out.itens = itens;
+
+  // total sempre número
+  out.total = Number(String(out.total ?? "0").replace(",", ".")) || 0;
+
+  return out;
 }
 
 /* ------------------------------- DAO Produtos -------------------------------- */
 const Produtos = {
   async listar() {
     try {
-      const { rows } = await pool.query(
-        `SELECT id, nome, preco, estoque, imagem
-           FROM products
-         ORDER BY created_at DESC`
-      );
+      const { rows } = await pool.query(`SELECT id, nome, preco, estoque, imagem FROM products ORDER BY created_at DESC`);
       return rows.map(r => ({ ...r, preco: Number(r.preco), estoque: Number(r.estoque) }));
     } catch (e) {
       if (/relation .*products.* does not exist/i.test(e?.message || "")) {
         await ensureSchema();
-        const { rows } = await pool.query(
-          `SELECT id, nome, preco, estoque, imagem
-             FROM products
-           ORDER BY created_at DESC`
-        );
+        const { rows } = await pool.query(`SELECT id, nome, preco, estoque, imagem FROM products ORDER BY created_at DESC`);
         return rows.map(r => ({ ...r, preco: Number(r.preco), estoque: Number(r.estoque) }));
       }
       throw e;
@@ -251,22 +299,31 @@ const Produtos = {
 /* -------------------------------- DAO Pedidos -------------------------------- */
 const Pedidos = {
   async listar() {
-    const { rows } = await pool.query(`SELECT * FROM pedidos ORDER BY created_at DESC`);
-    return rows.map(r => ({ ...r, total: Number(r.total) }));
+    try {
+      const { rows } = await pool.query(`SELECT * FROM pedidos ORDER BY created_at DESC`);
+      return rows.map(r => ({ ...r, total: Number(r.total) }));
+    } catch (e) {
+      if (/relation .*pedidos.* does not exist/i.test(e?.message || "")) {
+        await ensureSchema();
+        const { rows } = await pool.query(`SELECT * FROM pedidos ORDER BY created_at DESC`);
+        return rows.map(r => ({ ...r, total: Number(r.total) }));
+      }
+      throw e;
+    }
   },
   async obter(id) {
     const { rows } = await pool.query(`SELECT * FROM pedidos WHERE id=$1`, [id]);
     return rows[0] ? { ...rows[0], total: Number(rows[0].total) } : null;
   },
-  async criar(pedido) {
+  async criar(pedidoRaw) {
+    const pedido = normalizePedidoInput(pedidoRaw); // 👈 normaliza tudo
     const client = await pool.connect();
     try {
       await client.query("BEGIN");
       const id = newId();
-      const total = Number(String(pedido.total || "0").replace(",", ".")) || 0;
       const q = `INSERT INTO pedidos (id, cliente, itens, total, status, pix)
                  VALUES ($1,$2,$3,$4,$5,$6) RETURNING *`;
-      const vals = [id, pedido.cliente || {}, pedido.itens || [], total, pedido.status || "Pendente", pedido.pix || null];
+      const vals = [id, pedido.cliente, pedido.itens, pedido.total, pedido.status || "Pendente", pedido.pix || null];
       const { rows } = await client.query(q, vals);
       await Produtos.baixarEstoqueItens(pedido.itens, client);
       await client.query("COMMIT");
@@ -344,15 +401,10 @@ app.get("/api/pix/:valor/:txid?", async (req, res) => {
 /* ------------------------------- Produtos ----------------------------------- */
 // público
 app.get("/api/produtos", async (_req, res) => {
-  try {
-    const out = await Produtos.listar();
-    res.json(out);
-  } catch (e) {
-    console.error("[/api/produtos] erro:", e);
-    res.status(500).json({
-      error: "Falha ao listar produtos",
-      detail: e?.message || String(e)
-    });
+  try { res.json(await Produtos.listar()); }
+  catch (e) {
+    console.error("/api/produtos:", e?.message);
+    res.status(500).json({ error: "Falha ao listar produtos", detail: e?.message });
   }
 });
 // admin
@@ -429,17 +481,14 @@ async function sendPushToAll(title, body, data = {}) {
 }
 
 /* -------------------------------- Pedidos ----------------------------------- */
-// ⚠️ LISTAR = PÚBLICO (somente leitura) para o painel conseguir buscar via fetch
-app.get("/api/pedidos", async (_req, res) => {
-  try {
-    res.json(await Pedidos.listar());
-  } catch (e) {
-    console.error("[/api/pedidos] erro:", e);
-    res.status(500).json({ error: "Falha ao listar pedidos", detail: e?.message || String(e) });
+// admin
+app.get("/api/pedidos", ...adminOnly, async (_req, res) => {
+  try { res.json(await Pedidos.listar()); }
+  catch (e) {
+    console.error("/api/pedidos GET:", e?.message);
+    res.status(500).json({ error: "Falha ao listar pedidos", detail: e?.message });
   }
 });
-
-// os demais continuam protegidos
 app.get("/api/pedidos/:id", ...adminOnly, async (req, res) => {
   try {
     const p = await Pedidos.obter(String(req.params.id));
@@ -466,22 +515,24 @@ app.delete("/api/pedidos/:id", ...adminOnly, async (req, res) => {
 // público
 app.post("/api/pedidos", async (req, res) => {
   try {
-    const pedido = { ...req.body, status: "Pendente" };
+    // Normaliza tudo que possa vir como string JSON
+    const pedido = normalizePedidoInput({ ...req.body, status: "Pendente" });
 
     // Gera PIX (tentativa)
     try {
-      const rawTotal = String(pedido.total).replace(",", ".");
-      const valor = Number(rawTotal);
-      if (!Number.isFinite(valor) || valor < 0.01) throw new Error("Valor inválido");
-      const txid = ("PED" + (pedido.id || Date.now())).slice(0, 25);
-      const qrCodePix = QrCodePix({
-        version: "01", key: chavePix, name: nomeLoja, city: cidade, transactionId: txid, value: Number(valor.toFixed(2)),
-      });
-      pedido.pix = {
-        payload: qrCodePix.payload().replace(/\s+/g, ""),
-        qrCodeImage: await qrCodePix.base64(),
-        txid, chave: chavePix,
-      };
+      if (pedido.total >= 0.01) {
+        const txid = ("PED" + Date.now()).slice(0, 25);
+        const qrCodePix = QrCodePix({
+          version: "01", key: chavePix, name: nomeLoja, city: cidade, transactionId: txid, value: Number(pedido.total.toFixed(2)),
+        });
+        pedido.pix = {
+          payload: qrCodePix.payload().replace(/\s+/g, ""),
+          qrCodeImage: await qrCodePix.base64(),
+          txid, chave: chavePix,
+        };
+      } else {
+        pedido.pix = null;
+      }
     } catch (err) {
       console.error("Erro ao gerar PIX do pedido:", err?.message);
       pedido.pix = null;
@@ -495,7 +546,7 @@ app.post("/api/pedidos", async (req, res) => {
     const itensTxt = (pedido.itens || []).map(i => `${i.nome} x${i.quantidade}`).join(", ");
     const totalBR = Number(pedido.total || 0).toFixed(2).replace(".", ",");
 
-    await sendTelegramMessage(
+    sendTelegramMessage(
       `📦 <b>Novo pedido</b>\n` +
       `#${saved.id}\n` +
       `👤 ${nome}\n` +
@@ -510,124 +561,7 @@ app.post("/api/pedidos", async (req, res) => {
     res.json(saved);
   } catch (e) {
     console.error("POST /api/pedidos error:", e);
-    res.status(500).json({ error: "Falha ao criar pedido" });
-  }
-});
-
-/* ---------------- Debug/Backup/Restore (via Postgres) ----------------------- */
-const DEBUG_TOKEN = process.env.DEBUG_TOKEN || "segredo123";
-
-app.get("/api/backup", ...adminOnly, async (req, res) => {
-  if (req.query.token !== DEBUG_TOKEN) return res.status(403).json({ error: "Token inválido" });
-  try {
-    const [prods, peds, subs] = await Promise.all([Produtos.listar(), Pedidos.listar(), PushSubs.listar()]);
-    const out = { produtos: prods, pedidos: peds, pushSubs: subs };
-    const ts = new Date().toISOString().replace(/[:.]/g, "-");
-    res.setHeader("Content-Disposition", `attachment; filename=db-backup-${ts}.json`);
-    res.setHeader("Content-Type", "application/json");
-    res.send(JSON.stringify(out, null, 2));
-  } catch (err) { res.status(500).json({ error: "Erro ao gerar backup", detalhe: err.message }); }
-});
-
-app.post("/api/restore", ...adminOnly, async (req, res) => {
-  if (req.query.token !== DEBUG_TOKEN) return res.status(403).json({ error: "Token inválido" });
-  const incoming = req.body && typeof req.body === "object" ? req.body : {};
-  const dados = {
-    produtos: Array.isArray(incoming.produtos) ? incoming.produtos : [],
-    pedidos:  Array.isArray(incoming.pedidos)  ? incoming.pedidos  : [],
-    pushSubs: Array.isArray(incoming.pushSubs) ? incoming.pushSubs : [],
-  };
-  const mode = String(req.query.mode || "replace").toLowerCase(); // replace|merge
-
-  const client = await pool.connect();
-  try {
-    await client.query("BEGIN");
-    if (mode === "replace") {
-      await client.query("DELETE FROM push_subs");
-      await client.query("DELETE FROM pedidos");
-      await client.query("DELETE FROM products");
-    }
-    for (const p of dados.produtos) {
-      await client.query(
-        `INSERT INTO products (id,nome,preco,estoque,imagem)
-           VALUES ($1,$2,$3,$4,$5)
-         ON CONFLICT (id) DO UPDATE
-             SET nome=EXCLUDED.nome,preco=EXCLUDED.preco,estoque=EXCLUDED.estoque,imagem=EXCLUDED.imagem`,
-        [String(p.id || newId()), String(p.nome || ""), Number(p.preco || 0) || 0, parseInt(p.estoque || 0) || 0, p.imagem || ""]
-      );
-    }
-    for (const d of dados.pedidos) {
-      await client.query(
-        `INSERT INTO pedidos (id,cliente,itens,total,status,pix)
-           VALUES ($1,$2,$3,$4,$5,$6)
-         ON CONFLICT (id) DO UPDATE
-             SET cliente=EXCLUDED.cliente,itens=EXCLUDED.itens,total=EXCLUDED.total,status=EXCLUDED.status,pix=EXCLUDED.pix`,
-        [String(d.id || newId()), d.cliente || {}, d.itens || [], Number(d.total || 0) || 0, String(d.status || "Pendente"), d.pix || null]
-      );
-    }
-    for (const s of dados.pushSubs) {
-      if (!s?.endpoint) continue;
-      await client.query(
-        `INSERT INTO push_subs (endpoint, sub) VALUES ($1,$2)
-           ON CONFLICT (endpoint) DO UPDATE SET sub=EXCLUDED.sub`,
-        [s.endpoint, s]
-      );
-    }
-    await client.query("COMMIT");
-    res.json({ ok: true, mode, counts: { produtos: dados.produtos.length, pedidos: dados.pedidos.length, pushSubs: dados.pushSubs.length } });
-  } catch (err) {
-    await client.query("ROLLBACK");
-    res.status(500).json({ error: "Erro ao restaurar", detalhe: err.message });
-  } finally {
-    client.release();
-  }
-});
-
-/* -------------------- DEBUG DB (endpoints utilitários) ---------------------- */
-app.get("/debug/db-ping", async (_req, res) => {
-  try {
-    const { rows } = await pool.query("SELECT now()");
-    res.json({ ok: true, now: rows[0].now });
-  } catch (e) {
-    res.status(500).json({ ok: false, error: e?.message || String(e) });
-  }
-});
-app.post("/debug/db-ensure", async (_req, res) => {
-  try {
-    await ensureSchema();
-    res.json({ ok: true });
-  } catch (e) {
-    res.status(500).json({ ok: false, error: e?.message || String(e) });
-  }
-});
-app.get("/debug/db-tables", async (_req, res) => {
-  try {
-    const q = `
-      SELECT table_name
-      FROM information_schema.tables
-      WHERE table_schema='public'
-      ORDER BY table_name;
-    `;
-    const { rows } = await pool.query(q);
-    res.json({ ok: true, tables: rows.map(r => r.table_name) });
-  } catch (e) {
-    res.status(500).json({ ok: false, error: e?.message || String(e) });
-  }
-});
-app.get("/debug/db-counts", async (_req, res) => {
-  try {
-    const out = {};
-    for (const t of ["products","pedidos","push_subs"]) {
-      try {
-        const r = await pool.query(`SELECT COUNT(*)::int AS n FROM ${t}`);
-        out[t] = r.rows[0].n;
-      } catch (e) {
-        out[t] = `ERRO: ${e?.message || e}`;
-      }
-    }
-    res.json({ ok: true, counts: out });
-  } catch (e) {
-    res.status(500).json({ ok: false, error: e?.message || String(e) });
+    res.status(500).json({ error: "Falha ao criar pedido", detail: e?.message });
   }
 });
 
