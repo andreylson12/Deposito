@@ -134,14 +134,10 @@ app.get("/debug/telegram/getChat", async (_req, res) => {
 /* ------------------------------- Banco (Postgres) ---------------------------- */
 const { Pool } = require("pg");
 
-function normalizeDbUrl(u) {
-  if (!u) return u;
-  if (!/\?.*sslmode=/.test(u)) u += (u.includes("?") ? "&" : "?") + "sslmode=require";
-  return u;
-}
+// ⚠️ NÃO altere a URL (não acrescente sslmode). Forçamos SSL aqui:
 const pool = new Pool({
-  connectionString: normalizeDbUrl(process.env.DATABASE_URL),
-  ssl: { rejectUnauthorized: false },
+  connectionString: process.env.DATABASE_URL,
+  ssl: { require: true, rejectUnauthorized: false },
   connectionTimeoutMillis: 5000,
   idleTimeoutMillis: 30000,
   max: 10,
@@ -206,7 +202,6 @@ function parseJSONSafely(v) {
   if (typeof v !== "string") return v;
   const s = v.trim();
   if (!s) return v;
-  // aceita strings começando com { ou [ e tenta parse
   if ((s.startsWith("{") && s.endsWith("}")) || (s.startsWith("[") && s.endsWith("]"))) {
     try { return JSON.parse(s); } catch { return v; }
   }
@@ -214,26 +209,18 @@ function parseJSONSafely(v) {
 }
 function normalizePedidoInput(pedido) {
   const out = { ...pedido };
-
-  // cliente pode vir como string JSON
   out.cliente = parseJSONSafely(out.cliente);
   if (!out.cliente || typeof out.cliente !== "object") out.cliente = {};
 
-  // itens pode vir: array de objetos OU array de strings JSON
   let itens = parseJSONSafely(out.itens);
   if (!Array.isArray(itens)) itens = [];
-
   itens = itens.map(it => {
     const obj = parseJSONSafely(it);
-    if (obj && typeof obj === "object") return obj;
-    return null;
+    return (obj && typeof obj === "object") ? obj : null;
   }).filter(Boolean);
-
   out.itens = itens;
 
-  // total sempre número
   out.total = Number(String(out.total ?? "0").replace(",", ".")) || 0;
-
   return out;
 }
 
@@ -316,7 +303,7 @@ const Pedidos = {
     return rows[0] ? { ...rows[0], total: Number(rows[0].total) } : null;
   },
   async criar(pedidoRaw) {
-    const pedido = normalizePedidoInput(pedidoRaw); // 👈 normaliza tudo
+    const pedido = normalizePedidoInput(pedidoRaw);
     const client = await pool.connect();
     try {
       await client.query("BEGIN");
@@ -515,7 +502,6 @@ app.delete("/api/pedidos/:id", ...adminOnly, async (req, res) => {
 // público
 app.post("/api/pedidos", async (req, res) => {
   try {
-    // Normaliza tudo que possa vir como string JSON
     const pedido = normalizePedidoInput({ ...req.body, status: "Pendente" });
 
     // Gera PIX (tentativa)
