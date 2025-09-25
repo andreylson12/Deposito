@@ -36,10 +36,8 @@
   </header>
 
   <main>
-    <!-- GRID DE PRODUTOS -->
     <section class="produtos" id="listaProdutos"></section>
 
-    <!-- CARRINHO -->
     <section id="carrinho">
       <h2>🛒 Seu Carrinho</h2>
       <table>
@@ -58,7 +56,7 @@
         <option>Cartão</option>
       </select>
 
-      <button id="btnFinalizar" class="btn-finalizar">Finalizar Pedido</button>
+      <button id="btnFinalizar" class="btn-finalizar" onclick="finalizarPedido()">Finalizar Pedido</button>
     </section>
 
     <!-- PIX com CNPJ + valor travado + cópias + timer -->
@@ -68,9 +66,9 @@
       <p id="pixTimer" class="muted"></p>
       <p>Chave PIX (CNPJ): <strong id="pixChave">00.000.000/0000-00</strong></p>
       <div class="row-btns">
-        <button id="btnCopiarChave" class="btn">📋 Copiar chave PIX</button>
-        <button id="btnCopiarPayload" class="btn">📋 Copiar código PIX (copia e cola)</button>
-        <button id="btnCopiarValor" class="btn">📋 Copiar valor</button>
+        <button id="btnCopiarChave" class="btn" onclick="copiarChave()">📋 Copiar chave PIX</button>
+        <button id="btnCopiarPayload" class="btn" onclick="copiarPayload()">📋 Copiar código PIX (copia e cola)</button>
+        <button id="btnCopiarValor" class="btn" onclick="copiarValor()">📋 Copiar valor</button>
       </div>
       <p id="msgCopiado" style="display:none;color:green">✅ Chave copiada!</p>
       <p id="msgCopiadoPayload" style="display:none;color:green">✅ Código PIX copiado!</p>
@@ -158,196 +156,46 @@
       return semCRC + crc;
     }
 
-    // ===== Loja / Carrinho =====
-    const moeda = n => Number(n).toFixed(2).replace('.', ',');
+    // ====== Loja ======
     let carrinho = [];
+    const moeda = n => Number(n).toFixed(2).replace('.', ',');
 
-    // >>>>>>>>>>>>> ALTERAÇÃO AQUI: função defensiva <<<<<<<<<<<<<
     async function carregarProdutos(){
-      try {
-        const res = await fetch("/api/produtos", { cache:"no-store" });
-        if (!res.ok) {
-          const txt = await res.text();
-          console.error("Falha /api/produtos:", res.status, txt);
-          alert("Falha ao carregar produtos. Tente atualizar a página.");
-          return;
-        }
-        const produtos = await res.json();
-        if (!Array.isArray(produtos)) {
-          console.error("Resposta inesperada de /api/produtos:", produtos);
-          alert("Resposta inesperada ao listar produtos.");
-          return;
-        }
-
-        const el = document.getElementById("listaProdutos");
-        el.innerHTML = "";
-
-        produtos
-          .filter(p => Number(p.estoque) > 0)
-          .forEach(p => {
-            const img = p.imagem || "https://via.placeholder.com/300x300?text=Produto";
-            const card = document.createElement("div");
-            card.className = "card";
-            card.innerHTML = `
-              <img src="${img}" alt="${p.nome}">
-              <h3>${p.nome}</h3>
-              <p>R$ ${Number(p.preco).toFixed(2).replace('.', ',')}</p>
-              <p>Estoque: ${p.estoque}</p>
-              <button class="btn btn-add"
-                      data-id="${String(p.id)}"
-                      data-nome="${String(p.nome).replace(/"/g,'&quot;')}"
-                      data-preco="${Number(p.preco)}">Adicionar</button>
-            `;
-            el.appendChild(card);
-          });
-      } catch (e) {
-        console.error("Erro inesperado em carregarProdutos()", e);
-        alert("Erro de rede ao listar produtos.");
-      }
+      const res = await fetch("/api/produtos", { cache:"no-store" });
+      const produtos = await res.json();
+      const el = document.getElementById("listaProdutos"); el.innerHTML = "";
+      produtos
+        .filter(p => Number(p.estoque) > 0)
+        .forEach(p=>{
+          const img = p.imagem || "https://via.placeholder.com/300x300?text=Produto";
+          const div = document.createElement("div"); div.className="card";
+          div.innerHTML = `
+            <img src="${img}" alt="${p.nome}">
+            <h3>${p.nome}</h3>
+            <p>R$ ${moeda(p.preco)}</p>
+            <p>Estoque: ${p.estoque}</p>
+            <button class="btn" onclick="adicionar(${p.id}, '${p.nome.replace(/'/g,'&#39;')}', ${Number(p.preco)})">Adicionar</button>
+          `;
+          el.appendChild(div);
+        });
     }
 
-    function adicionar(id, nome, preco){
-      id = String(id);
-      const item = carrinho.find(i => String(i.id) === id);
-      if (item) item.quantidade++;
-      else carrinho.push({ id, nome, preco: Number(preco)||0, quantidade: 1 });
-      renderCarrinho();
+    function adicionar(id,nome,preco){
+      const item = carrinho.find(i=>i.id===id);
+      if(item) item.quantidade++; else carrinho.push({id,nome,preco,quantidade:1});
+      render();
     }
 
-    function renderCarrinho(){
-      const tb = document.getElementById("itensCarrinho");
-      tb.innerHTML = "";
+    function render(){
+      const tb = document.getElementById("itensCarrinho"); tb.innerHTML = "";
       let total = 0;
-
-      carrinho.forEach(i => {
-        const sub = Number(i.preco) * Number(i.quantidade);
-        total += sub;
+      carrinho.forEach(i=>{
+        const sub = i.preco*i.quantidade; total += sub;
         const tr = document.createElement("tr");
-        tr.innerHTML = `
-          <td>${i.nome}</td>
-          <td>
-            <button class="btn btn-qtd" data-id="${i.id}" data-d="-1">−</button>
-            <span style="margin:0 6px">${i.quantidade}</span>
-            <button class="btn btn-qtd" data-id="${i.id}" data-d="1">+</button>
-            <button class="btn btn-remover" data-id="${i.id}" style="margin-left:6px;background:#e74c3c">x</button>
-          </td>
-          <td>R$ ${moeda(i.preco)}</td>
-          <td>R$ ${moeda(sub)}</td>`;
+        tr.innerHTML = `<td>${i.nome}</td><td>${i.quantidade}</td><td>R$ ${moeda(i.preco)}</td><td>R$ ${moeda(sub)}</td>`;
         tb.appendChild(tr);
       });
-
       document.getElementById("totalCarrinho").textContent = "Total: R$ " + moeda(total);
-    }
-
-    // Delegação de eventos para Adicionar / +/- / Remover / Finalizar / Copiar
-    document.addEventListener("click", (e) => {
-      // Adicionar
-      const add = e.target.closest(".btn-add");
-      if (add) {
-        adicionar(add.dataset.id, add.dataset.nome, add.dataset.preco);
-        return;
-      }
-      // + / -
-      const qtd = e.target.closest(".btn-qtd");
-      if (qtd) {
-        const id = String(qtd.dataset.id);
-        const delta = Number(qtd.dataset.d);
-        const item = carrinho.find(i => String(i.id) === id);
-        if (item) {
-          item.quantidade = Math.max(1, (item.quantidade||1) + delta);
-          renderCarrinho();
-        }
-        return;
-      }
-      // Remover
-      const rem = e.target.closest(".btn-remover");
-      if (rem) {
-        const id = String(rem.dataset.id);
-        carrinho = carrinho.filter(i => String(i.id) !== id);
-        renderCarrinho();
-        return;
-      }
-      // Finalizar
-      if (e.target && e.target.id === "btnFinalizar") {
-        finalizarPedido();
-        return;
-      }
-      // Copiar chave / payload / valor
-      if (e.target && e.target.id === "btnCopiarChave") copiarChave();
-      if (e.target && e.target.id === "btnCopiarPayload") copiarPayload();
-      if (e.target && e.target.id === "btnCopiarValor") copiarValor();
-    });
-
-    async function finalizarPedido(){
-      if(!carrinho.length) return alert("Carrinho vazio!");
-      const btn = document.getElementById("btnFinalizar"); btn.disabled = true;
-      try{
-        const nome = document.getElementById("clienteNome").value.trim();
-        const endereco = document.getElementById("clienteEndereco").value.trim();
-        const pagamento = document.getElementById("clientePagamento").value;
-        if(!nome || !endereco) return alert("Preencha seu nome e endereço.");
-
-        if (pagamento === "PIX" && !isValidCNPJ(PIX_CHAVE_CNPJ_NUM)) {
-          return alert("CNPJ da chave PIX inválido. Verifique a configuração.");
-        }
-
-        const total = carrinho.reduce((s,i)=>s+i.preco*i.quantidade,0);
-        _lastTotal = Number(total.toFixed(2));
-
-        const pedido = {
-          cliente: { nome, endereco },
-          itens: carrinho.map(i=>({ id:i.id, nome:i.nome, preco:i.preco, quantidade:i.quantidade })),
-          total: _lastTotal,
-          pagamento,
-          status: "Pendente"
-        };
-
-        const res = await fetch("/api/pedidos", {
-          method:"POST",
-          headers:{ "Content-Type":"application/json" },
-          body: JSON.stringify(pedido)
-        });
-        const salvo = await res.json();
-
-        if (pagamento === "PIX") {
-          const sec = document.getElementById("pagamento");
-          sec.style.display = "block";
-          document.getElementById("pixChave").textContent = formatCNPJ(PIX_CHAVE_CNPJ_NUM);
-
-          const txid = ("RS" + (salvo?.id ?? Date.now())).slice(0,25);
-          const descricao = `Pedido ${(salvo?.id ?? "")}`;
-
-          const payload = buildPixPayload({
-            chave: PIX_CHAVE_CNPJ_NUM,
-            nome: MERCHANT_NAME,
-            cidade: MERCHANT_CITY,
-            valor: _lastTotal, // valor travado
-            txid,
-            descricao
-          });
-
-          _lastPixPayload = payload;
-
-          const qrEl = document.getElementById("pixQr");
-          qrEl.innerHTML = "";
-          new QRCode(qrEl, { text: payload, width: 220, height: 220 });
-
-          document.getElementById("pixPayload").textContent = payload;
-          startQrTimer(QR_EXPIRY_MINUTES);
-        } else {
-          document.getElementById("pagamento").style.display="none";
-          if (_qrTimerId){ clearInterval(_qrTimerId); _qrTimerId = null; }
-        }
-
-        alert("Pedido realizado! Total: R$ " + moeda(_lastTotal));
-        carrinho = [];
-        renderCarrinho();
-      }catch(e){
-        console.error(e);
-        alert("Erro ao finalizar. Tente novamente.");
-      }finally{
-        btn.disabled = false;
-      }
     }
 
     // ===== Timer do QR =====
@@ -358,6 +206,7 @@
     }
 
     function startQrTimer(minutes){
+      // limpa timer anterior
       if (_qrTimerId){ clearInterval(_qrTimerId); _qrTimerId = null; }
       const msTotal = minutes * 60 * 1000;
       _qrExpireAt = Date.now() + msTotal;
@@ -382,9 +231,88 @@
       _qrTimerId = setInterval(tick, 1000);
     }
 
+    async function finalizarPedido(){
+      if(!carrinho.length) return alert("Carrinho vazio!");
+      const btn = document.getElementById("btnFinalizar"); btn.disabled = true;
+      try{
+        const nome = document.getElementById("clienteNome").value.trim();
+        const endereco = document.getElementById("clienteEndereco").value.trim();
+        const pagamento = document.getElementById("clientePagamento").value;
+        if(!nome || !endereco) return alert("Preencha seu nome e endereço.");
+
+        if (pagamento === "PIX" && !isValidCNPJ(PIX_CHAVE_CNPJ_NUM)) {
+          return alert("CNPJ da chave PIX inválido. Verifique a configuração.");
+        }
+
+        const total = carrinho.reduce((s,i)=>s+i.preco*i.quantidade,0);
+        _lastTotal = Number(total.toFixed(2));
+
+        const pedido = {
+          id: Date.now(),
+          cliente: { nome, endereco },
+          itens: carrinho.map(i=>({ id:i.id, nome:i.nome, preco:i.preco, quantidade:i.quantidade })),
+          total: _lastTotal,
+          pagamento,
+          pix: pagamento === "PIX" ? { tipoChave: "CNPJ", chave: PIX_CHAVE_CNPJ_NUM } : null,
+          status: "Pendente"
+        };
+
+        const res = await fetch("/api/pedidos", {
+          method:"POST",
+          headers:{ "Content-Type":"application/json" },
+          body: JSON.stringify(pedido)
+        });
+        const salvo = await res.json();
+
+        if (pagamento === "PIX") {
+          const sec = document.getElementById("pagamento");
+          sec.style.display = "block";
+
+          document.getElementById("pixChave").textContent = formatCNPJ(PIX_CHAVE_CNPJ_NUM);
+
+          const txid = ("RS" + (salvo?.id ?? pedido.id)).slice(0,25);
+          const descricao = `Pedido ${(salvo?.id ?? pedido.id)}`;
+
+          const payload = buildPixPayload({
+            chave: PIX_CHAVE_CNPJ_NUM,
+            nome: MERCHANT_NAME,
+            cidade: MERCHANT_CITY,
+            valor: _lastTotal, // valor travado
+            txid,
+            descricao
+          });
+
+          // Guarda payload para o botão "copiar"
+          _lastPixPayload = payload;
+
+          // QR Code
+          const qrEl = document.getElementById("pixQr");
+          qrEl.innerHTML = "";
+          new QRCode(qrEl, { text: payload, width: 220, height: 220 });
+
+          // Exibe payload (opcional)
+          document.getElementById("pixPayload").textContent = payload;
+
+          // Inicia/renova o timer de expiração
+          startQrTimer(QR_EXPIRY_MINUTES);
+        } else {
+          document.getElementById("pagamento").style.display="none";
+          if (_qrTimerId){ clearInterval(_qrTimerId); _qrTimerId = null; }
+        }
+
+        alert("Pedido realizado! ID: " + (salvo.id ?? pedido.id) + " — Total: R$ " + moeda(_lastTotal));
+        carrinho = []; render();
+      }catch(e){
+        console.error(e);
+        alert("Erro ao finalizar. Tente novamente.");
+      }finally{
+        btn.disabled = false;
+      }
+    }
+
     // Copia apenas dígitos da chave CNPJ
     function copiarChave(){
-      if (Date.now() > _qrExpireAt) return;
+      if (Date.now() > _qrExpireAt) return; // bloqueia se expirado
       const raw = document.getElementById("pixChave").textContent.replace(/\D/g,"");
       navigator.clipboard.writeText(raw).then(()=>{
         const msg = document.getElementById("msgCopiado");
@@ -422,17 +350,10 @@
       });
     }
 
-    // ===== Inicialização =====
-    function setPixUiDefaults(){
-      document.getElementById("pixChave").textContent = formatCNPJ(PIX_CHAVE_CNPJ_NUM);
-      setPixUiEnabled(false);
-    }
-
     document.addEventListener("DOMContentLoaded", ()=>{
-      carregarProdutos().then(renderCarrinho);
-      setPixUiDefaults();
+      carregarProdutos();
+      document.getElementById("pixChave").textContent = formatCNPJ(PIX_CHAVE_CNPJ_NUM);
     });
   </script>
 </body>
 </html>
-
