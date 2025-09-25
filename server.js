@@ -40,7 +40,9 @@ app.use(
 
 /* ------------------------------ Arquivos estáticos --------------------------- */
 app.use(
-  express.static(path.join(__dirname, "public"), { index: false })
+  express.static(path.join(__dirname, "public"), {
+    index: false,
+  })
 );
 
 /* -------------------------- Rotas de páginas (UI) ---------------------------- */
@@ -53,7 +55,7 @@ app.get(["/delivery", "/delivery.html"], (_req, res) => {
 app.get("/health", (_req, res) => res.json({ ok: true }));
 
 /* -------------------------------- Config PIX -------------------------------- */
-const chavePix = "55160826000100";   // CNPJ sem máscara
+const chavePix = "55160826000100";   // CNPJ SEM máscara
 const nomeLoja = "RS LUBRIFICANTES"; // máx 25
 const cidade   = "SAMBAIBA";         // máx 15
 
@@ -64,7 +66,7 @@ const VAPID_SUBJECT = process.env.VAPID_SUBJECT     || "mailto:suporte@exemplo.c
 if (webpush && VAPID_PUBLIC && VAPID_PRIVATE) {
   webpush.setVapidDetails(VAPID_SUBJECT, VAPID_PUBLIC, VAPID_PRIVATE);
 } else if (!VAPID_PUBLIC || !VAPID_PRIVATE) {
-  console.warn("[web-push] sem VAPID_PUBLIC_KEY/VAPID_PRIVATE_KEY — recurso de push web inativo.");
+  console.warn("[web-push] sem VAPID_PUBLIC_KEY/VAPID_PRIVATE_KEY — push web inativo.");
 }
 
 /* ----------------------- Telegram (com logs e debug) ------------------------- */
@@ -93,32 +95,38 @@ async function sendTelegramMessage(text) {
     });
     const body = await r.text();
     if (!r.ok) console.warn("[telegram] falhou:", r.status, body);
+    else console.log("[telegram] ok:", body);
   } catch (e) {
     console.warn("[telegram] erro:", e?.message || e);
   }
 }
 
-// Debug Telegram
+// Endpoints de debug do Telegram
 app.get("/debug/telegram", async (req, res) => {
   try {
     const text = String(req.query.text || "Teste do servidor ✅");
-    if (!TG_TOKEN || !TG_CHAT) return res.status(400).json({ ok:false, error:"Faltam TELEGRAM_BOT_TOKEN/TELEGRAM_CHAT_ID" });
+    if (!TG_TOKEN || !TG_CHAT) {
+      return res.status(400).json({ ok: false, error: "Faltam TELEGRAM_BOT_TOKEN ou TELEGRAM_CHAT_ID" });
+    }
     const r = await _fetch(`https://api.telegram.org/bot${TG_TOKEN}/sendMessage`, {
-      method: "POST", headers:{ "Content-Type":"application/json" },
-      body: JSON.stringify({ chat_id: TG_CHAT, text, parse_mode:"HTML", disable_web_page_preview:true }),
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ chat_id: TG_CHAT, text, parse_mode: "HTML", disable_web_page_preview: true }),
     });
     const bodyText = await r.text();
-    try { res.status(r.status).json(JSON.parse(bodyText)); }
-    catch { res.status(r.status).type("text/plain").send(bodyText); }
-  } catch (e) { res.status(500).json({ ok:false, error:String(e?.message||e) }); }
+    try { return res.status(r.status).json(JSON.parse(bodyText)); }
+    catch { return res.status(r.status).type("text/plain").send(bodyText); }
+  } catch (e) {
+    return res.status(500).json({ ok: false, error: String(e?.message || e) });
+  }
 });
 app.get("/debug/telegram/getMe", async (_req, res) => {
-  if (!TG_TOKEN) return res.status(400).json({ error:"Sem TELEGRAM_BOT_TOKEN" });
+  if (!TG_TOKEN) return res.status(400).json({ error: "Sem TELEGRAM_BOT_TOKEN" });
   const r = await _fetch(`https://api.telegram.org/bot${TG_TOKEN}/getMe`);
   res.status(r.status).json(await r.json());
 });
 app.get("/debug/telegram/getChat", async (_req, res) => {
-  if (!TG_TOKEN || !TG_CHAT) return res.status(400).json({ error:"Sem TOKEN/CHAT_ID" });
+  if (!TG_TOKEN || !TG_CHAT) return res.status(400).json({ error: "Sem TOKEN/CHAT_ID" });
   const r = await _fetch(`https://api.telegram.org/bot${TG_TOKEN}/getChat?chat_id=${encodeURIComponent(TG_CHAT)}`);
   res.status(r.status).json(await r.json());
 });
@@ -126,10 +134,14 @@ app.get("/debug/telegram/getChat", async (_req, res) => {
 /* ------------------------------- Banco (Postgres) ---------------------------- */
 const { Pool } = require("pg");
 
-// SSL robusto para Railway/Cloud (evita self-signed chain)
+function normalizeDbUrl(u) {
+  if (!u) return u;
+  if (!/\?.*sslmode=/.test(u)) u += (u.includes("?") ? "&" : "?") + "sslmode=require";
+  return u;
+}
 const pool = new Pool({
-  connectionString: process.env.DATABASE_URL,
-  ssl: { require: true, rejectUnauthorized: false },
+  connectionString: normalizeDbUrl(process.env.DATABASE_URL),
+  ssl: { rejectUnauthorized: false },
   connectionTimeoutMillis: 5000,
   idleTimeoutMillis: 30000,
   max: 10,
@@ -162,107 +174,15 @@ async function ensureSchema() {
 }
 ensureSchema().catch(e => console.error("ensureSchema:", e));
 
-/* --------- Helpers de Debug do DB ---------- */
-app.get("/debug/db-ensure", async (_req, res) => {
-  try { await ensureSchema(); res.json({ ok: true }); }
-  catch (e) { res.status(500).json({ ok:false, error:e.message }); }
-});
-app.get("/debug/db-tables", async (_req, res) => {
-  try {
-    const { rows } = await pool.query(`SELECT table_name FROM information_schema.tables WHERE table_schema='public' ORDER BY 1`);
-    res.json(rows.map(r => r.table_name));
-  } catch (e) { res.status(500).json({ error: e.message }); }
-});
-app.get("/debug/db-counts", async (_req, res) => {
-  try {
-    const q = (t) => pool.query(`SELECT COUNT(*)::int AS c FROM ${t}`).then(r => r.rows[0].c).catch(()=>null);
-    const [a,b,c] = await Promise.all([q("products"), q("pedidos"), q("push_subs")]);
-    res.json({ products:a, pedidos:b, push_subs:c });
-  } catch (e) { res.status(500).json({ error: e.message }); }
-});
-app.get("/debug/db-ping", async (_req, res) => {
-  try { await pool.query("SELECT 1"); res.json({ ok:true }); }
-  catch (e) { res.status(500).json({ ok:false, error:e.message }); }
-});
-
 function newId() {
   try { return require("crypto").randomUUID(); } catch { return String(Date.now()); }
-}
-
-/* --------- Normalizadores (tolerantes a strings malformadas) --------- */
-function tryJSON(s) {
-  try { return JSON.parse(s); } catch { return null; }
-}
-function cleanMaybeWrappedJSON(str) {
-  if (typeof str !== "string") return str;
-  let s = str.trim();
-
-  // Se veio como string JSON entre aspas, decodifica uma vez
-  if (s.startsWith("\"") && s.endsWith("\"")) {
-    const inner = tryJSON(s);
-    if (typeof inner === "string") s = inner.trim();
-  }
-
-  // Remove aspas sobrando no final (caso típico ..."}")
-  if ((s.startsWith("{") || s.startsWith("[")) && s.endsWith("\"")) {
-    const fixed = tryJSON(s.slice(0, -1));
-    if (fixed !== null) return fixed;
-  }
-
-  // Tenta parse normal
-  if ((s.startsWith("{") && s.endsWith("}")) || (s.startsWith("[") && s.endsWith("]"))) {
-    const parsed = tryJSON(s);
-    if (parsed !== null) return parsed;
-  }
-  return str; // devolve original (pode ser objeto já correto)
-}
-
-function parseJSONSafely(v) {
-  if (typeof v === "string") {
-    const cleaned = cleanMaybeWrappedJSON(v);
-    if (typeof cleaned !== "string") return cleaned;
-    const parsed = tryJSON(cleaned);
-    return parsed !== null ? parsed : v;
-  }
-  return v;
-}
-
-function normalizePedidoInput(pedido) {
-  const out = { ...pedido };
-
-  // cliente pode vir como string JSON
-  out.cliente = parseJSONSafely(out.cliente);
-  if (!out.cliente || typeof out.cliente !== "object") out.cliente = {};
-
-  // itens pode vir como objeto único ou string (até duplo encodado)
-  let itens = parseJSONSafely(out.itens);
-  if (!Array.isArray(itens)) itens = [itens];
-  itens = itens
-    .map((it) => parseJSONSafely(it))
-    .map((it) => (it && typeof it === "object" ? it : null))
-    .filter(Boolean);
-  out.itens = itens;
-
-  out.total = Number(String(out.total ?? "0").replace(",", ".")) || 0;
-  out.status = out.status || "Pendente";
-
-  return out;
 }
 
 /* ------------------------------- DAO Produtos -------------------------------- */
 const Produtos = {
   async listar() {
-    try {
-      const { rows } = await pool.query(`SELECT id, nome, preco, estoque, imagem FROM products ORDER BY created_at DESC`);
-      return rows.map(r => ({ ...r, preco: Number(r.preco), estoque: Number(r.estoque) }));
-    } catch (e) {
-      if (/relation .*products.* does not exist/i.test(e?.message || "")) {
-        await ensureSchema();
-        const { rows } = await pool.query(`SELECT id, nome, preco, estoque, imagem FROM products ORDER BY created_at DESC`);
-        return rows.map(r => ({ ...r, preco: Number(r.preco), estoque: Number(r.estoque) }));
-      }
-      throw e;
-    }
+    const { rows } = await pool.query(`SELECT id, nome, preco, estoque, imagem FROM products ORDER BY created_at DESC`);
+    return rows.map(r => ({ ...r, preco: Number(r.preco), estoque: Number(r.estoque) }));
   },
   async criar(data) {
     const id = newId();
@@ -311,33 +231,33 @@ const Produtos = {
 /* -------------------------------- DAO Pedidos -------------------------------- */
 const Pedidos = {
   async listar() {
-    try {
-      const { rows } = await pool.query(`SELECT * FROM pedidos ORDER BY created_at DESC`);
-      return rows.map(r => ({ ...r, total: Number(r.total) }));
-    } catch (e) {
-      if (/relation .*pedidos.* does not exist/i.test(e?.message || "")) {
-        await ensureSchema();
-        const { rows } = await pool.query(`SELECT * FROM pedidos ORDER BY created_at DESC`);
-        return rows.map(r => ({ ...r, total: Number(r.total) }));
-      }
-      throw e;
-    }
+    const { rows } = await pool.query(`SELECT * FROM pedidos ORDER BY created_at DESC`);
+    return rows.map(r => ({ ...r, total: Number(r.total) }));
   },
   async obter(id) {
     const { rows } = await pool.query(`SELECT * FROM pedidos WHERE id=$1`, [id]);
     return rows[0] ? { ...rows[0], total: Number(rows[0].total) } : null;
   },
-  async criar(pedidoRaw) {
-    const pedido = normalizePedidoInput(pedidoRaw);
+  async criar(pedido) {
     const client = await pool.connect();
     try {
       await client.query("BEGIN");
       const id = newId();
+      const total = Number(String(pedido.total || "0").replace(",", ".")) || 0;
+
+      // 🔧 SERIALIZAÇÃO EXPLÍCITA DOS CAMPOS JSON
+      const clienteJson = JSON.stringify(pedido.cliente || {});
+      const itensJson   = JSON.stringify(Array.isArray(pedido.itens) ? pedido.itens : []);
+      const pixJson     = pedido.pix ? JSON.stringify(pedido.pix) : null;
+
       const q = `INSERT INTO pedidos (id, cliente, itens, total, status, pix)
                  VALUES ($1,$2,$3,$4,$5,$6) RETURNING *`;
-      const vals = [id, pedido.cliente, pedido.itens, pedido.total, pedido.status, pedido.pix || null];
+      const vals = [id, clienteJson, itensJson, total, pedido.status || "Pendente", pixJson];
       const { rows } = await client.query(q, vals);
-      await Produtos.baixarEstoqueItens(pedido.itens, client);
+
+      // baixa estoque usando os itens do pedido
+      await Produtos.baixarEstoqueItens(Array.isArray(pedido.itens) ? pedido.itens : [], client);
+
       await client.query("COMMIT");
       const r = rows[0];
       return { ...r, total: Number(r.total) };
@@ -389,26 +309,42 @@ app.get("/api/pix/:valor/:txid?", async (req, res) => {
       return res.status(400).json({ error: "Valor inválido (mínimo 0,01)" });
     }
     const txid = (req.params.txid || "PIX" + Date.now()).slice(0, 25);
+
     const qrCodePix = QrCodePix({
-      version: "01", key: chavePix, name: nomeLoja, city: cidade, transactionId: txid, value: Number(valor.toFixed(2)),
+      version: "01",
+      key: chavePix,
+      name: nomeLoja,
+      city: cidade,
+      transactionId: txid,
+      value: Number(valor.toFixed(2)),
     });
+
+    const payload = qrCodePix.payload().replace(/\s+/g, "");
+    const qrCodeImage = await qrCodePix.base64();
+
     res.set("Cache-Control", "no-store");
-    res.json({
-      payload: qrCodePix.payload().replace(/\s+/g, ""),
-      qrCodeImage: await qrCodePix.base64(),
-      txid, chave: chavePix
-    });
+    res.json({ payload, qrCodeImage, txid, chave: chavePix });
   } catch (err) {
     console.error("Erro ao gerar PIX:", err);
     res.status(500).json({ error: "Falha ao gerar QR Code PIX" });
   }
 });
 
+/* --------------------------------- DEBUG ------------------------------------ */
+app.get("/debug/echo", (req, res) => {
+  res.json({ headers: req.headers, query: req.query });
+});
+app.post("/debug/echo-pedido", (req, res) => {
+  res.json(req.body);
+});
+
 /* ------------------------------- Produtos ----------------------------------- */
+// público
 app.get("/api/produtos", async (_req, res) => {
   try { res.json(await Produtos.listar()); }
-  catch (e) { console.error("/api/produtos:", e?.message); res.status(500).json({ error: "Falha ao listar produtos", detail: e?.message }); }
+  catch (e) { console.error(e); res.status(500).json({ error: "Falha ao listar produtos", detail: e.message }); }
 });
+// admin
 app.post("/api/produtos", ...adminOnly, async (req, res) => {
   try { res.json(await Produtos.criar(req.body || {})); }
   catch (e) { res.status(400).json({ error: e.message || "Falha ao criar produto" }); }
@@ -464,27 +400,28 @@ app.post("/api/push/unsubscribe", async (req, res) => {
     res.json({ ok: true });
   } catch { res.status(500).json({ error: "falha ao remover assinatura" }); }
 });
+
 async function sendPushToAll(title, body, data = {}) {
   if (!webpush || !VAPID_PUBLIC || !VAPID_PRIVATE) return;
   const subs = await PushSubs.listar();
   if (!subs.length) return;
   const payload = JSON.stringify({ title, body, data });
-  await Promise.all(subs.map(async (sub) => {
-    try { await webpush.sendNotification(sub, payload); }
-    catch (err) {
-      console.warn("[push] assinatura inválida:", err?.statusCode);
-      try { if (sub?.endpoint) await PushSubs.remover(sub.endpoint); } catch {}
-    }
-  }));
+  await Promise.all(
+    subs.map(async (sub) => {
+      try { await webpush.sendNotification(sub, payload); }
+      catch (err) {
+        console.warn("[push] assinatura inválida:", err?.statusCode);
+        try { if (sub?.endpoint) await PushSubs.remover(sub.endpoint); } catch {}
+      }
+    })
+  );
 }
 
 /* -------------------------------- Pedidos ----------------------------------- */
+// admin
 app.get("/api/pedidos", ...adminOnly, async (_req, res) => {
   try { res.json(await Pedidos.listar()); }
-  catch (e) {
-    console.error("/api/pedidos GET:", e?.message);
-    res.status(500).json({ error: "Falha ao listar pedidos", detail: e?.message });
-  }
+  catch (e) { res.status(500).json({ error: "Falha ao listar pedidos" }); }
 });
 app.get("/api/pedidos/:id", ...adminOnly, async (req, res) => {
   try {
@@ -512,22 +449,22 @@ app.delete("/api/pedidos/:id", ...adminOnly, async (req, res) => {
 // público
 app.post("/api/pedidos", async (req, res) => {
   try {
-    const pedido = normalizePedidoInput({ ...req.body, status: "Pendente" });
+    const pedido = { ...req.body, status: "Pendente" };
 
-    // PIX (opcional)
+    // Gera PIX (tentativa)
     try {
-      if (pedido.total >= 0.01) {
-        const txid = ("PED" + Date.now()).slice(0, 25);
-        const qrCodePix = QrCodePix({
-          version:"01", key:chavePix, name:nomeLoja, city:cidade,
-          transactionId:txid, value:Number(pedido.total.toFixed(2)),
-        });
-        pedido.pix = {
-          payload: qrCodePix.payload().replace(/\s+/g, ""),
-          qrCodeImage: await qrCodePix.base64(),
-          txid, chave: chavePix,
-        };
-      } else pedido.pix = null;
+      const rawTotal = String(pedido.total).replace(",", ".");
+      const valor = Number(rawTotal);
+      if (!Number.isFinite(valor) || valor < 0.01) throw new Error("Valor inválido");
+      const txid = ("PED" + (pedido.id || Date.now())).slice(0, 25);
+      const qrCodePix = QrCodePix({
+        version: "01", key: chavePix, name: nomeLoja, city: cidade, transactionId: txid, value: Number(valor.toFixed(2)),
+      });
+      pedido.pix = {
+        payload: qrCodePix.payload().replace(/\s+/g, ""),
+        qrCodeImage: await qrCodePix.base64(),
+        txid, chave: chavePix,
+      };
     } catch (err) {
       console.error("Erro ao gerar PIX do pedido:", err?.message);
       pedido.pix = null;
@@ -555,8 +492,98 @@ app.post("/api/pedidos", async (req, res) => {
 
     res.json(saved);
   } catch (e) {
-    console.error("POST /api/pedidos error:", e?.message || e);
-    res.status(500).json({ error: "Falha ao criar pedido", detail: e?.message });
+    console.error("POST /api/pedidos error:", e);
+    res.status(500).json({ error: "Falha ao criar pedido", detail: e.message });
+  }
+});
+
+/* ---------------- Debug/Backup/Restore (via Postgres) ----------------------- */
+const DEBUG_TOKEN = process.env.DEBUG_TOKEN || "segredo123";
+
+app.get("/debug/db-ensure", async (_req, res) => {
+  try { await ensureSchema(); res.json({ ok: true }); }
+  catch (e) { res.status(500).json({ ok: false, error: e.message }); }
+});
+app.get("/debug/db-tables", async (_req, res) => {
+  const { rows } = await pool.query(`SELECT tablename FROM pg_tables WHERE schemaname='public' ORDER BY 1`);
+  res.json(rows.map(r => r.tablename));
+});
+app.get("/debug/db-counts", async (_req, res) => {
+  const q = async (t) => (await pool.query(`SELECT COUNT(*)::int AS n FROM ${t}`)).rows[0].n;
+  const [products, pedidos, push_subs] = await Promise.all([q("products"), q("pedidos"), q("push_subs")]);
+  res.json({ products, pedidos, push_subs });
+});
+
+app.get("/api/backup", ...adminOnly, async (req, res) => {
+  if (req.query.token !== DEBUG_TOKEN) return res.status(403).json({ error: "Token inválido" });
+  try {
+    const [prods, peds, subs] = await Promise.all([Produtos.listar(), Pedidos.listar(), PushSubs.listar()]);
+    const out = { produtos: prods, pedidos: peds, pushSubs: subs };
+    const ts = new Date().toISOString().replace(/[:.]/g, "-");
+    res.setHeader("Content-Disposition", `attachment; filename=db-backup-${ts}.json`);
+    res.setHeader("Content-Type", "application/json");
+    res.send(JSON.stringify(out, null, 2));
+  } catch (err) { res.status(500).json({ error: "Erro ao gerar backup", detalhe: err.message }); }
+});
+
+app.post("/api/restore", ...adminOnly, async (req, res) => {
+  if (req.query.token !== DEBUG_TOKEN) return res.status(403).json({ error: "Token inválido" });
+  const incoming = req.body && typeof req.body === "object" ? req.body : {};
+  const dados = {
+    produtos: Array.isArray(incoming.produtos) ? incoming.produtos : [],
+    pedidos:  Array.isArray(incoming.pedidos)  ? incoming.pedidos  : [],
+    pushSubs: Array.isArray(incoming.pushSubs) ? incoming.pushSubs : [],
+  };
+  const mode = String(req.query.mode || "replace").toLowerCase(); // replace|merge
+
+  const client = await pool.connect();
+  try {
+    await client.query("BEGIN");
+    if (mode === "replace") {
+      await client.query("DELETE FROM push_subs");
+      await client.query("DELETE FROM pedidos");
+      await client.query("DELETE FROM products");
+    }
+    for (const p of dados.produtos) {
+      await client.query(
+        `INSERT INTO products (id,nome,preco,estoque,imagem)
+           VALUES ($1,$2,$3,$4,$5)
+         ON CONFLICT (id) DO UPDATE
+             SET nome=EXCLUDED.nome,preco=EXCLUDED.preco,estoque=EXCLUDED.estoque,imagem=EXCLUDED.imagem`,
+        [String(p.id || newId()), String(p.nome || ""), Number(p.preco || 0) || 0, parseInt(p.estoque || 0) || 0, p.imagem || ""]
+      );
+    }
+    for (const d of dados.pedidos) {
+      await client.query(
+        `INSERT INTO pedidos (id,cliente,itens,total,status,pix)
+           VALUES ($1,$2,$3,$4,$5,$6)
+         ON CONFLICT (id) DO UPDATE
+             SET cliente=EXCLUDED.cliente,itens=EXCLUDED.itens,total=EXCLUDED.total,status=EXCLUDED.status,pix=EXCLUDED.pix`,
+        [
+          String(d.id || newId()),
+          JSON.stringify(d.cliente || {}),
+          JSON.stringify(Array.isArray(d.itens) ? d.itens : []),
+          Number(d.total || 0) || 0,
+          String(d.status || "Pendente"),
+          d.pix ? JSON.stringify(d.pix) : null
+        ]
+      );
+    }
+    for (const s of dados.pushSubs) {
+      if (!s?.endpoint) continue;
+      await client.query(
+        `INSERT INTO push_subs (endpoint, sub) VALUES ($1,$2)
+           ON CONFLICT (endpoint) DO UPDATE SET sub=EXCLUDED.sub`,
+        [s.endpoint, s]
+      );
+    }
+    await client.query("COMMIT");
+    res.json({ ok: true, mode, counts: { produtos: dados.produtos.length, pedidos: dados.pedidos.length, pushSubs: dados.pushSubs.length } });
+  } catch (err) {
+    await client.query("ROLLBACK");
+    res.status(500).json({ error: "Erro ao restaurar", detalhe: err.message });
+  } finally {
+    client.release();
   }
 });
 
