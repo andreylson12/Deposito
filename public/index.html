@@ -2,172 +2,56 @@
 <html lang="pt-BR">
 <head>
   <meta charset="UTF-8" />
-  <title>Painel – Salgados da Rayleniza</title>
+  <title>Painel - Rs lubrificantes</title>
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-
-  <!-- PWA / tema -->
   <link rel="manifest" href="/manifest.json" />
-  <meta name="theme-color" content="#0b0f1a" />
-
+  <meta name="theme-color" content="#111111" />
   <style>
-    :root{
-      /* Paleta “salgados” – quente e apetitosa */
-      --bg:#0b0f1a;          /* fundo geral bem escuro */
-      --bg-soft:#121826;     /* painéis */
-      --text:#eef2ff;        /* texto principal */
-      --muted:#94a3b8;       /* texto fraco */
-      --brand:#ea580c;       /* laranja/âmbar */
-      --brand-2:#f59e0b;     /* âmbar claro */
-      --ok:#22c55e;          /* verde confirmar */
-      --ok-2:#16a34a;
-      --err:#ef4444;         /* vermelho erro */
-      --blue:#3b82f6;        /* azul ação */
-      --soft:#1f2937;        /* bordas */
-      --card:#0f172a;        /* tr alternada */
-      --shadow:0 8px 24px rgba(0,0,0,.25);
-      --radius:14px;
-    }
-
-    *{box-sizing:border-box}
-    html{-webkit-text-size-adjust:100%}
-    body{
-      margin:0; font-family:system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif;
-      display:flex; min-height:100vh; background:linear-gradient(160deg, #0b0f1a 0%, #0f172a 60%, #111827 100%); color:var(--text);
-    }
-
-    /* ===== Sidebar ===== */
-    .sidebar{
-      width:260px; background:linear-gradient(180deg,#0f172a 0%, #0b0f1a 100%);
-      padding:22px; position:sticky; top:0; align-self:flex-start; height:100vh; box-shadow:var(--shadow);
-      border-right:1px solid #0b1220;
-    }
-    .brand{
-      display:flex; align-items:center; gap:10px; margin-bottom:18px;
-    }
-    .logo{
-      width:42px; height:42px; border-radius:12px; background:radial-gradient(circle at 30% 30%, #f97316, #ea580c 60%, #9a3412);
-      display:grid; place-items:center; color:#fff; font-weight:800; box-shadow:0 6px 20px rgba(234,88,12,.45);
-    }
-    .brand h2{ margin:0; line-height:1.1; font-size:18px }
-    .brand small{ color:var(--muted); display:block; margin-top:2px }
-
-    .nav{
-      margin-top:16px; display:grid; gap:10px;
-    }
-    .nav a{
-      display:flex; align-items:center; gap:10px;
-      padding:12px 14px; border-radius:12px; text-decoration:none; color:var(--text);
-      background:rgba(255,255,255,.02); border:1px solid #0b1220; transition:.2s;
-    }
-    .nav a:hover{ transform:translateY(-1px); border-color:#12203a; background:rgba(255,255,255,.04) }
-    .nav a .icon{ width:28px; height:28px; border-radius:8px; background:#121826; display:grid; place-items:center; color:#ffd09b }
-
-    /* ===== Conteúdo ===== */
-    .content{
-      flex:1; padding:28px; overflow-y:auto; max-width:1200px; margin:0 auto;
-    }
-    .page-head{
-      display:flex; align-items:center; justify-content:space-between; gap:16px; margin-bottom:18px;
-    }
-    .page-head h1{ margin:0; font-size:22px }
-    .chip{
-      background:linear-gradient(90deg, #1f2937 0%, #0b1220 100%);
-      border:1px solid #0b1220; color:var(--muted); padding:8px 12px; border-radius:999px; font-size:13px;
-    }
-
-    .section{
-      background:linear-gradient(180deg, #0b1220 0%, #0f172a 100%);
-      border:1px solid #0b1220; border-radius:var(--radius);
-      padding:18px; margin-bottom:18px; box-shadow:var(--shadow);
-      display:none;
-    }
-    .section.active{ display:block }
-
-    /* ===== Form & Table ===== */
-    form input, form button, form select{
-      padding:10px 12px; border-radius:12px; border:1px solid #101827; background:#0b1220; color:var(--text);
-      box-shadow:inset 0 0 0 1px #0b1220;
-    }
-    form input::placeholder{ color:#94a3b84d }
-    form button{ background:linear-gradient(180deg, var(--brand) 0%, #c2410c 100%); border:none; color:#fff; cursor:pointer; font-weight:600 }
-    form button:hover{ filter:brightness(.98) }
-
-    input[type="number"]{ width:140px }
-    input[type="url"], input[type="text"]{ width:100%; max-width:420px }
-
-    table{ border-collapse:separate; border-spacing:0; width:100%; background:#0b1220; border:1px solid #0b1220; border-radius:12px; overflow:hidden }
-    thead th{
-      background:linear-gradient(180deg,#0e1a2c 0%,#0b1220 100%); color:#cbd5e1; text-transform:uppercase; letter-spacing:.02em;
-      font-size:12px; padding:12px 10px; border-bottom:1px solid #0e1a2c;
-    }
-    td{ padding:12px 10px; border-bottom:1px solid #0e1a2c; vertical-align:top; text-align:center; color:#e2e8f0 }
-    tr:nth-child(2n) td{ background:#0d1728 }
-    tr.editing td{ background:#0f2036 }
-
-    .acao-grid{ display:flex; gap:8px; justify-content:center; flex-wrap:wrap }
-    button.action{ padding:8px 10px; border-radius:10px; color:#fff; border:none; cursor:pointer }
-    .btn-remover{ background:linear-gradient(180deg,var(--err),#b91c1c) }
-    .btn-editar{ background:linear-gradient(180deg,var(--blue),#2563eb) }
-    .btn-cancelar{ background:linear-gradient(180deg,#64748b,#475569) }
-    .btn-salvar{ background:linear-gradient(180deg,var(--ok),var(--ok-2)) }
-
-    .total-row td{ font-weight:700; background:#0d1728; color:#fff }
-
-    .helper{ color:var(--muted); font-size:12px; margin-top:4px; word-break:break-all }
-
-    /* badges */
-    .badge{
-      display:inline-flex; align-items:center; gap:8px; padding:6px 10px; border-radius:999px;
-      background:rgba(234,88,12,.12); color:#ffedd5; border:1px solid rgba(234,88,12,.25); font-size:12px;
-    }
-
-    @media (max-width:980px){
-      .sidebar{ position:fixed; inset:0 auto 0 0; width:220px; transform:translateX(-100%); transition:.25s }
-      .sidebar.open{ transform:none }
-      .content{ padding:22px 16px }
-    }
+    body { margin:0; font-family:Arial, sans-serif; display:flex; height:100vh; background:#1c1c1c; color:#fff; }
+    .sidebar{ width:220px; background:#111; padding:20px; }
+    .sidebar a{ display:block; margin:10px 0; padding:8px; border-radius:4px; text-decoration:none; color:#fff; cursor:pointer; }
+    .sidebar a:hover{ background:#333; }
+    .content{ flex:1; padding:20px; overflow-y:auto; }
+    section{ display:none; }
+    section.active{ display:block; }
+    table{ border-collapse:collapse; width:100%; background:#2c3e50; }
+    th, td{ padding:8px; border:1px solid #444; vertical-align: top; text-align:center; }
+    input, button, select{ padding:8px; margin:5px 0; border-radius:6px; border:none; }
+    input[type="number"]{ width:120px; }
+    input[type="url"], input[type="text"]{ width:100%; max-width:360px; }
+    button{ background:#27ae60; color:#fff; cursor:pointer; }
+    button:hover{ background:#219150; }
+    .btn-remover{ background:#e74c3c; }
+    .btn-editar{ background:#2980b9; }
+    .btn-cancelar{ background:#7f8c8d; }
+    .btn-salvar{ background:#27ae60; }
+    .acao-grid{ display:flex; gap:8px; justify-content:center; flex-wrap:wrap; }
+    .total-row td{font-weight:700;background:#152536;color:#fff}
+    tr.editing{ background:#24394d; }
+    .helper{ color:#bbb; font-size:12px; margin-top:2px; word-break:break-all; }
   </style>
 </head>
-
 <body>
-  <!-- ===== Sidebar ===== -->
-  <aside class="sidebar" id="sidebar">
-    <div class="brand">
-      <div class="logo">🍩</div>
-      <div>
-        <h2>Salgados da Rayleniza</h2>
-        <small>painel administrativo</small>
-      </div>
-    </div>
+  <div class="sidebar">
+    <h2>Rs lubrificantes</h2>
+    <a onclick="mostrarSecao('produtos')">🏷️ Produtos</a>
+    <a onclick="mostrarSecao('pedidos')">🚚 Pedidos</a>
+  </div>
 
-    <nav class="nav">
-      <a onclick="mostrarSecao('produtos')"><span class="icon">🏷️</span> Produtos</a>
-      <a onclick="mostrarSecao('pedidos')"><span class="icon">🚚</span> Pedidos</a>
-    </nav>
-  </aside>
+  <div class="content">
+    <h1>Painel Administrativo</h1>
+    <p>Gerencie seus produtos e pedidos.</p>
 
-  <!-- ===== Conteúdo ===== -->
-  <main class="content">
-    <div class="page-head">
-      <h1>Gestão de pedidos e cardápio</h1>
-      <span class="chip">Salgados da Rayleniza</span>
-    </div>
-
-    <!-- Produtos -->
-    <section id="produtos" class="section active">
-      <h2 style="margin-top:0;display:flex;align-items:center;gap:10px">
-        <span class="badge">🏷️ Produtos</span>
-      </h2>
-
-      <form id="formProdutos" style="display:flex;flex-wrap:wrap;gap:10px;align-items:flex-start;margin-bottom:14px">
-        <input id="nomeProduto" placeholder="Nome do salgado" required />
+    <section id="produtos" class="active">
+      <h2>🏷️ Produtos</h2>
+      <form id="formProdutos">
+        <input id="nomeProduto" placeholder="Nome" required />
         <input id="precoProduto" type="number" step="0.01" placeholder="Preço" required />
         <input id="estoqueProduto" type="number" placeholder="Estoque" required />
-        <input id="imagemProduto" placeholder="URL da imagem (opcional)" />
-        <button type="submit">Adicionar</button>
-        <div class="helper" style="flex-basis:100%">Dica: você também pode editar direto na tabela.</div>
+        <input id="imagemProduto" placeholder="URL da Imagem" />
+        <button type="submit">Salvar</button>
+        <div class="helper">Dica: você também pode editar produtos direto na tabela abaixo.</div>
       </form>
-
       <table>
         <thead>
           <tr>
@@ -178,12 +62,8 @@
       </table>
     </section>
 
-    <!-- Pedidos -->
-    <section id="pedidos" class="section">
-      <h2 style="margin-top:0;display:flex;align-items:center;gap:10px">
-        <span class="badge">🚚 Pedidos</span>
-      </h2>
-
+    <section id="pedidos">
+      <h2>🚚 Pedidos</h2>
       <table>
         <thead>
           <tr>
@@ -191,7 +71,9 @@
             <th>Total</th><th>Pagamento</th><th>Status</th><th>Ações</th>
           </tr>
         </thead>
+
         <tbody id="listaPedidos"></tbody>
+
         <tfoot>
           <tr class="total-row">
             <td colspan="4" style="text-align:right">Total geral:</td>
@@ -201,7 +83,7 @@
         </tfoot>
       </table>
     </section>
-  </main>
+  </div>
 
   <audio id="alertSound" preload="auto"></audio>
 
@@ -210,67 +92,90 @@
     const moeda = n => Number(n).toFixed(2).replace('.', ',');
 
     function mostrarSecao(id){
-      document.querySelectorAll(".section").forEach(s=>s.classList.remove("active"));
+      document.querySelectorAll("section").forEach(s=>s.classList.remove("active"));
       document.getElementById(id).classList.add("active");
     }
 
-    // ---------- Service Worker + Push (opcional) ----------
+    // ---------------- Service Worker + Push (opcional) ----------------
     let swReg = null;
     async function registrarServiceWorker() {
       if ("serviceWorker" in navigator) {
-        try { swReg = await navigator.serviceWorker.register("/service-worker.js"); }
-        catch (e) { console.warn("[SW] falhou:", e); }
+        try {
+          swReg = await navigator.serviceWorker.register("/service-worker.js");
+          console.log("[SW] registrado", swReg);
+        } catch (e) {
+          console.warn("[SW] falhou:", e);
+        }
       }
     }
     function urlBase64ToUint8Array(base64String){
-      const padding="=".repeat((4-base64String.length%4)%4);
-      const base64=(base64String+padding).replace(/-/g,"+").replace(/_/g,"/");
-      const rawData=atob(base64);
-      return Uint8Array.from([...rawData].map(c=>c.charCodeAt(0)));
+      const padding = "=".repeat((4 - base64String.length % 4) % 4);
+      const base64 = (base64String + padding).replace(/-/g, "+").replace(/_/g, "/");
+      const rawData = atob(base64);
+      return Uint8Array.from([...rawData].map(c => c.charCodeAt(0)));
     }
-    async function inscreverPush(){
-      if(!("serviceWorker" in navigator) || !("PushManager" in window)) return;
-      try{
-        const keyRes=await fetch("/api/push/public-key");
-        if(!keyRes.ok) return;
-        const { publicKey }=await keyRes.json();
-        if(!publicKey) return;
-        const perm=await Notification.requestPermission();
-        if(perm!=="granted") return;
-        const reg=swReg || (await navigator.serviceWorker.ready);
-        const sub=await reg.pushManager.subscribe({
-          userVisibleOnly:true,
-          applicationServerKey:urlBase64ToUint8Array(publicKey)
+    async function inscreverPush() {
+      if (!("serviceWorker" in navigator) || !("PushManager" in window)) return;
+      try {
+        const keyRes = await fetch("/api/push/public-key");
+        if (!keyRes.ok) return;
+        const { publicKey } = await keyRes.json();
+        if (!publicKey) return;
+        const perm = await Notification.requestPermission();
+        if (perm !== "granted") return;
+        const reg = swReg || (await navigator.serviceWorker.ready);
+        const sub = await reg.pushManager.subscribe({
+          userVisibleOnly: true,
+          applicationServerKey: urlBase64ToUint8Array(publicKey)
         });
-        await fetch("/api/push/subscribe",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(sub)});
-      }catch(_){}
+        await fetch("/api/push/subscribe", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(sub)
+        });
+      } catch (_) { /* silencioso */ }
     }
-    function notificarBanner(p){
-      if(!("Notification" in window) || Notification.permission!=="granted") return;
-      if(swReg && swReg.showNotification){
-        swReg.showNotification("Novo pedido!",{
-          body:`#${p.id} · ${p.cliente?.nome || "Cliente"} · R$ ${moeda(p.total)}`,
-          tag:`pedido-${p.id}`, vibrate:[100,50,100],
-          icon:"/icons/icon-192.png", badge:"/icons/icon-192.png"
+    function notificarBanner(p) {
+      if (!("Notification" in window) || Notification.permission !== "granted") return;
+      if (swReg && swReg.showNotification) {
+        swReg.showNotification("Novo pedido!", {
+          body: `#${p.id} · ${p.cliente?.nome || "Cliente"} · R$ ${moeda(p.total)}`,
+          tag: `pedido-${p.id}`,
+          vibrate: [100, 50, 100],
+          icon: "/icons/icon-192.png",
+          badge: "/icons/icon-192.png"
         });
-      }else{
-        new Notification("Novo pedido!",{ body:`#${p.id} · ${p.cliente?.nome || "Cliente"} · R$ ${moeda(p.total)}`, tag:`pedido-${p.id}` });
+      } else {
+        new Notification("Novo pedido!", {
+          body: `#${p.id} · ${p.cliente?.nome || "Cliente"} · R$ ${moeda(p.total)}`,
+          tag: `pedido-${p.id}`
+        });
       }
     }
 
-    // ---------- Produtos (edição inline) ----------
-    const estadoEdicao = new Map();
+    // ---------------- Produtos (edição inline) ----------------
+    const estadoEdicao = new Map(); // id(string) -> { ... }
 
     async function carregarProdutos(){
-      const res = await fetch(API.produtos,{cache:"no-store"});
-      if(!res.ok){ alert("Falha ao carregar produtos."); return;}
+      const res = await fetch(API.produtos, { cache:"no-store" });
+      if (!res.ok) {
+        const t = await res.text().catch(()=> "");
+        console.error("Falha /api/produtos:", res.status, t);
+        alert("Falha ao carregar produtos.");
+        return;
+      }
       const produtos = await res.json();
+      if (!Array.isArray(produtos)) {
+        console.error("Resposta inesperada de /api/produtos:", produtos);
+        alert("Resposta inesperada ao listar produtos.");
+        return;
+      }
       const tbody = document.getElementById("listaProdutos");
-      tbody.innerHTML="";
+      tbody.innerHTML = "";
       produtos.forEach(p=>{
-        const tr=document.createElement("tr");
+        const tr = document.createElement("tr");
         const id = String(p.id);
-        tr.dataset.id=id;
+        tr.dataset.id = id;
         tr.innerHTML = renderLinhaProdutoView({ ...p, id });
         tbody.appendChild(tr);
       });
@@ -286,8 +191,8 @@
         <td><div class="helper">${escapeHtml(img)}</div></td>
         <td>
           <div class="acao-grid">
-            <button class="action btn-editar" onclick="editarProduto('${idAttr}')">Editar</button>
-            <button class="action btn-remover" onclick="removerProduto('${idAttr}')">Excluir</button>
+            <button class="btn-editar" onclick="editarProduto('${idAttr}')">Editar</button>
+            <button class="btn-remover" onclick="removerProduto('${idAttr}')">Excluir</button>
           </div>
         </td>
       `;
@@ -298,113 +203,183 @@
       const valores = estadoEdicao.get(id) || { nome:p.nome, preco:p.preco, estoque:p.estoque, imagem:p.imagem || "" };
       const idAttr = escapeAttr(id);
       return `
-        <td><input type="text" id="edit-nome-${idAttr}" value="${escapeAttr(valores.nome)}" placeholder="Nome" /></td>
-        <td><input type="number" id="edit-preco-${idAttr}" value="${Number(valores.preco)}" step="0.01" min="0" placeholder="Preço" /></td>
-        <td><input type="number" id="edit-estoque-${idAttr}" value="${parseInt(valores.estoque||0)}" min="0" placeholder="Estoque" /></td>
+        <td>
+          <input type="text" id="edit-nome-${idAttr}" value="${escapeAttr(valores.nome)}" placeholder="Nome" />
+        </td>
+        <td>
+          <input type="number" id="edit-preco-${idAttr}" value="${Number(valores.preco)}" step="0.01" min="0" placeholder="Preço" />
+        </td>
+        <td>
+          <input type="number" id="edit-estoque-${idAttr}" value="${parseInt(valores.estoque||0)}" min="0" placeholder="Estoque" />
+        </td>
         <td>
           <input type="url" id="edit-imagem-${idAttr}" value="${escapeAttr(valores.imagem || "")}" placeholder="URL da imagem" />
           <div class="helper">Dica: deixe vazio para manter a atual.</div>
         </td>
         <td>
           <div class="acao-grid">
-            <button class="action btn-salvar" onclick="salvarProduto()">Salvar</button>
-            <button class="action btn-cancelar" onclick="cancelarEdicao('${idAttr}')">Cancelar</button>
+            <button class="btn-salvar" onclick="salvarProduto()">Salvar</button>
+            <button class="btn-cancelar" onclick="cancelarEdicao('${idAttr}')">Cancelar</button>
           </div>
         </td>
       `;
     }
 
     function editarProduto(id){
-      id=String(id);
-      const tr=document.querySelector(`tr[data-id="${CSS.escape(id)}"]`);
-      if(!tr || tr.classList.contains("editing")) return;
-      const tds=tr.querySelectorAll("td");
-      const atual={
+      id = String(id);
+      const tr = document.querySelector(`tr[data-id="${CSS.escape(id)}"]`);
+      if (!tr) return;
+      if (tr.classList.contains("editing")) return;
+
+      const tds = tr.querySelectorAll("td");
+      const atual = {
         nome: tds[0].innerText.trim(),
         preco: parseFloat((tds[1].innerText || "0").replace(/[^\d,.-]/g,"").replace(".","").replace(",", ".")) || 0,
         estoque: parseInt(tds[2].innerText) || 0,
         imagem: (tds[3].querySelector(".helper")?.textContent || "").trim()
       };
-      estadoEdicao.set(id,{...atual,original:atual});
+      estadoEdicao.set(id, { ...atual, original: atual });
+
       tr.classList.add("editing");
-      tr.innerHTML=renderLinhaProdutoEdit({id,...atual});
-      tr.querySelectorAll("input").forEach(inp=>{
-        inp.addEventListener("keydown",e=>{
-          if(e.key==="Enter") salvarProduto();
-          if(e.key==="Escape") cancelarEdicao(id);
+      tr.innerHTML = renderLinhaProdutoEdit({ id, ...atual });
+
+      const inputs = tr.querySelectorAll("input");
+      inputs.forEach(inp=>{
+        inp.addEventListener("keydown", (e)=>{
+          if (e.key === "Enter") salvarProduto();
+          if (e.key === "Escape") cancelarEdicao(id);
         });
       });
       tr.querySelector(`#edit-nome-${CSS.escape(id)}`)?.focus();
     }
 
     function cancelarEdicao(id){
-      id=String(id);
-      const tr=document.querySelector(`tr[data-id="${CSS.escape(id)}"]`);
-      if(!tr) return;
-      const st=estadoEdicao.get(id);
-      const p=st?.original?{id,...st.original}:{id,nome:"-",preco:0,estoque:0,imagem:""};
+      id = String(id);
+      const tr = document.querySelector(`tr[data-id="${CSS.escape(id)}"]`);
+      if (!tr) return;
+      const st = estadoEdicao.get(id);
+      const p = st?.original ? { id, ...st.original } : { id, nome: "-", preco: 0, estoque: 0, imagem: "" };
       tr.classList.remove("editing");
-      tr.innerHTML=renderLinhaProdutoView(p);
+      tr.innerHTML = renderLinhaProdutoView(p);
       estadoEdicao.delete(id);
     }
 
     async function salvarProduto(){
-      const tr=document.querySelector("tr.editing");
-      if(!tr) return;
-      const id=String(tr.dataset.id);
-      const nome=(document.getElementById(`edit-nome-${id}`)?.value||"").trim();
-      const preco=parseFloat(document.getElementById(`edit-preco-${id}`)?.value||"0");
-      const estoque=parseInt(document.getElementById(`edit-estoque-${id}`)?.value||"0");
-      const imagem=(document.getElementById(`edit-imagem-${id}`)?.value||"").trim();
-      if(!nome) return alert("Informe o nome.");
-      if(Number.isNaN(preco)||preco<0) return alert("Preço inválido.");
-      if(!Number.isInteger(estoque)||estoque<0) return alert("Estoque inválido.");
-      const payload={nome,preco,estoque}; if(imagem) payload.imagem=imagem;
+      const tr = document.querySelector("tr.editing");
+      if (!tr) return;
+      const id = String(tr.dataset.id);
+      if (!id) { alert("ID do produto não encontrado."); return; }
+
+      const nome    = (document.getElementById(`edit-nome-${id}`)?.value || "").trim();
+      const preco   = parseFloat(document.getElementById(`edit-preco-${id}`)?.value || "0");
+      const estoque = parseInt(document.getElementById(`edit-estoque-${id}`)?.value || "0");
+      const imagem  = (document.getElementById(`edit-imagem-${id}`)?.value || "").trim();
+
+      if (!nome) return alert("Informe o nome.");
+      if (Number.isNaN(preco) || preco < 0) return alert("Preço inválido.");
+      if (!Number.isInteger(estoque) || estoque < 0) return alert("Estoque inválido.");
+
+      const payload = { nome, preco, estoque };
+      if (imagem) payload.imagem = imagem;
 
       try{
-        let res=await fetch(`${API.produtos}/${encodeURIComponent(id)}`,{
-          method:"PATCH", headers:{"Content-Type":"application/json"}, body:JSON.stringify(payload)
+        let res = await fetch(`${API.produtos}/${encodeURIComponent(id)}`, {
+          method:"PATCH",
+          headers:{ "Content-Type":"application/json" },
+          body: JSON.stringify(payload)
         });
-        if(!res.ok){
-          res=await fetch(`${API.produtos}/${encodeURIComponent(id)}`,{
-            method:"PUT", headers:{"Content-Type":"application/json"}, body:JSON.stringify(payload)
+        if (!res.ok) {
+          res = await fetch(`${API.produtos}/${encodeURIComponent(id)}`, {
+            method:"PUT",
+            headers:{ "Content-Type":"application/json" },
+            body: JSON.stringify(payload)
           });
         }
-        if(!res.ok){ throw new Error("Falha ao atualizar produto"); }
+        if (!res.ok) {
+          const txt = await res.text().catch(()=> "");
+          throw new Error(`Falha ao atualizar produto (HTTP ${res.status}) ${txt}`);
+        }
         await carregarProdutos();
-      }catch(e){ console.error(e); alert("Erro ao salvar."); }
-      finally{ estadoEdicao.delete(id); }
+      }catch(e){
+        console.error(e);
+        alert("Erro ao salvar. Veja o console para detalhes.");
+      }finally{
+        estadoEdicao.delete(id);
+      }
     }
 
-    function escapeHtml(str){ return String(str).replace(/[&<>"']/g,s=>({"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;","'":"&#39;"}[s])); }
-    function escapeAttr(str){ return escapeHtml(str).replace(/"/g,"&quot;"); }
+    function escapeHtml(str){
+      return String(str).replace(/[&<>"']/g, s => ({
+        "&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;","'":"&#39;"
+      }[s]));
+    }
+    function escapeAttr(str){
+      return escapeHtml(str).replace(/"/g, "&quot;");
+    }
 
     async function removerProduto(id){
-      id=String(id);
+      id = String(id);
       if(confirm("Excluir?")){
-        await fetch(`${API.produtos}/${encodeURIComponent(id)}`,{method:"DELETE"});
+        await fetch(`${API.produtos}/${encodeURIComponent(id)}`, { method:"DELETE" });
         carregarProdutos();
       }
     }
 
-    // ---------- Pedidos ----------
+    // Criação de produto (POST)
+    document.getElementById("formProdutos").addEventListener("submit", async e=>{
+      e.preventDefault();
+      const novo = {
+        nome: document.getElementById("nomeProduto").value.trim(),
+        preco: parseFloat(document.getElementById("precoProduto").value),
+        estoque: parseInt(document.getElementById("estoqueProduto").value),
+        imagem: document.getElementById("imagemProduto").value || "https://via.placeholder.com/300x300?text=Produto"
+      };
+      if (!novo.nome) return alert("Informe o nome.");
+      if (Number.isNaN(novo.preco) || novo.preco < 0) return alert("Preço inválido.");
+      if (!Number.isInteger(novo.estoque) || novo.estoque < 0) return alert("Estoque inválido.");
+
+      const res = await fetch(API.produtos, {
+        method:"POST",
+        headers:{ "Content-Type":"application/json" },
+        body: JSON.stringify(novo)
+      });
+      if (!res.ok) {
+        const t = await res.text().catch(()=> "");
+        alert("Falha ao criar produto: " + t);
+        return;
+      }
+      e.target.reset();
+      carregarProdutos();
+    });
+
+    // ---------------- Pedidos ----------------
     function atualizarAutoSoma(pedidos){
-      const total=(Array.isArray(pedidos)?pedidos:[]).reduce((s,p)=>s+Number(p.total||0),0);
-      const td=document.getElementById('tdTotalGeral'); if(td) td.textContent='R$ '+moeda(total);
+      const total = (Array.isArray(pedidos) ? pedidos : [])
+        .reduce((s, p) => s + Number(p.total || 0), 0);
+      const td = document.getElementById('tdTotalGeral');
+      if (td) td.textContent = 'R$ ' + moeda(total);
     }
 
-    let pedidosConhecidos=new Set();
+    let pedidosConhecidos = new Set();
     async function carregarPedidos(){
-      const res=await fetch(API.pedidos,{cache:"no-store"});
-      if(!res.ok) return;
-      const pedidos=await res.json();
-      const tbody=document.getElementById("listaPedidos"); tbody.innerHTML="";
-      pedidos.forEach(p=>{ if(!pedidosConhecidos.has(p.id)){ if(pedidosConhecidos.size>0) notificarBanner(p); pedidosConhecidos.add(p.id);} });
+      const res = await fetch(API.pedidos, { cache:"no-store" });
+      if (!res.ok) return; // rota é protegida por Basic Auth (já está no painel)
+      const pedidos = await res.json();
+      const tbody = document.getElementById("listaPedidos");
+      tbody.innerHTML = "";
+
+      pedidos.forEach(p => {
+        if (!pedidosConhecidos.has(p.id)) {
+          if (pedidosConhecidos.size > 0) notificarBanner(p);
+          pedidosConhecidos.add(p.id);
+        }
+      });
+
       pedidos.forEach(p=>{
-        const id=String(p.id);
-        const itens=(p.itens||[]).map(i=>`${i.nome} x${i.quantidade}`).join(", ");
-        const tr=document.createElement("tr");
-        tr.innerHTML=`
+        const id = String(p.id);
+        const itens = (p.itens||[]).map(i => `${i.nome} x${i.quantidade}`).join(", ");
+        const tr = document.createElement("tr");
+        tr.innerHTML = `
           <td>${escapeHtml(id)}</td>
           <td>${escapeHtml(p.cliente?.nome||"-")}</td>
           <td>${escapeHtml(p.cliente?.endereco||"-")}</td>
@@ -412,43 +387,47 @@
           <td>R$ ${moeda(p.total)}</td>
           <td>${p.pix?"PIX":"Outro"}</td>
           <td>
-            <select onchange="atualizarStatus('${escapeAttr(id)}', this.value)" style="background:#0b1220;color:#fff;border:1px solid #101827;border-radius:10px;padding:8px">
+            <select onchange="atualizarStatus('${escapeAttr(id)}', this.value)">
               <option ${p.status==="Pendente"?"selected":""}>Pendente</option>
               <option ${p.status==="Preparando"?"selected":""}>Preparando</option>
               <option ${p.status==="Saiu para entrega"?"selected":""}>Saiu para entrega</option>
               <option ${p.status==="Concluído"?"selected":""}>Concluído</option>
             </select>
           </td>
-          <td><button class="action btn-remover" onclick="removerPedido('${escapeAttr(id)}')">Excluir</button></td>`;
+          <td><button class="btn-remover" onclick="removerPedido('${escapeAttr(id)}')">Excluir</button></td>`;
         tbody.appendChild(tr);
       });
+
       atualizarAutoSoma(pedidos);
     }
 
-    async function atualizarStatus(id,status){
-      id=String(id);
-      await fetch(`${API.pedidos}/${encodeURIComponent(id)}/status`,{
-        method:"PUT", headers:{"Content-Type":"application/json"}, body:JSON.stringify({status})
+    async function atualizarStatus(id, status){
+      id = String(id);
+      await fetch(`${API.pedidos}/${encodeURIComponent(id)}/status`, {
+        method:"PUT",
+        headers:{ "Content-Type":"application/json" },
+        body: JSON.stringify({ status })
       });
       carregarPedidos();
     }
     async function removerPedido(id){
-      id=String(id);
+      id = String(id);
       if(confirm("Excluir pedido?")){
-        await fetch(`${API.pedidos}/${encodeURIComponent(id)}`,{method:"DELETE"});
+        await fetch(`${API.pedidos}/${encodeURIComponent(id)}`, { method:"DELETE" });
         carregarPedidos();
       }
     }
 
-    // ---------- Bootstrap ----------
+    // ---------------- Bootstrap ----------------
     document.addEventListener("DOMContentLoaded", ()=>{
       registrarServiceWorker().then(inscreverPush);
       carregarProdutos();
       carregarPedidos();
       setInterval(carregarPedidos, 5000);
 
-      document.getElementById("listaProdutos").addEventListener("dblclick",(e)=>{
-        const tr=e.target.closest("tr[data-id]"); if(tr) editarProduto(String(tr.dataset.id));
+      document.getElementById("listaProdutos").addEventListener("dblclick", (e)=>{
+        const tr = e.target.closest("tr[data-id]");
+        if (tr) editarProduto(String(tr.dataset.id));
       });
     });
   </script>
