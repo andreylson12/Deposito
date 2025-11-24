@@ -117,8 +117,8 @@ function saveDB(db) {
 
 /* -------------------------------- Config PIX -------------------------------- */
 // ⚠️ Se quiser usar CNPJ em vez de telefone, troque a chave aqui:
-const chavePix = "55160826000100";   // CNPJ SEM máscara
-const nomeLoja = "RS LUBRIFICANTES"; // máx ~25 chars (ok)
+const chavePix = "63000081000140";   // CNPJ SEM máscara
+const nomeLoja = "POINT BEER"; // máx ~25 chars (ok)
 const cidade   = "SAMBAIBA";         // máx ~15 chars (ok)
 
 /* ----------------------------- Push Web (opcional) --------------------------- */
@@ -545,3 +545,4 @@ app.post("/api/restore", ...adminOnly, (req, res) => {
 app.listen(PORT, "0.0.0.0", () => {
   console.log(`Servidor rodando na porta ${PORT}`);
 });
+
