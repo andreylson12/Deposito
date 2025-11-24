@@ -1,5 +1,5 @@
 // public/service-worker.js
-const CACHE = "rs-lubrificantes-v6"; // 👈 versão nova
+const CACHE = "Point Beer-v6"; // 👈 versão nova
 
 self.addEventListener("install", (e) => {
   e.waitUntil(
